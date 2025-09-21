@@ -138,7 +138,7 @@ class LineTransferMobility:
             levels = [self.measurements[d][fc] for fc in self.band_centers]
             fig.add_trace(go.Scatter(x=np.log10(self.band_centers), y=levels, mode='markers+lines', name=f"{d} m"))
         fig.update_layout(
-            title="Measurements",
+            title="Measurements - Level vs Frequency",
             xaxis_title="Frequency (Hz)",
             yaxis_title="Level (dB)",
             xaxis=dict(
