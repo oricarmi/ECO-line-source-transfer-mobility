@@ -21,7 +21,7 @@ Main methods:
 import numpy as np
 import plotly.graph_objects as go
 
-
+# hi itamar
 class LineTransferMobility:
     def __init__(self, measurements, train_length, receiver_offset, source_depth=0.0):
         """
@@ -138,7 +138,7 @@ class LineTransferMobility:
             levels = [self.measurements[d][fc] for fc in self.band_centers]
             fig.add_trace(go.Scatter(x=np.log10(self.band_centers), y=levels, mode='markers+lines', name=f"{d} m"))
         fig.update_layout(
-            title="Measurements - Level vs Frequency",
+            title="Measurements",
             xaxis_title="Frequency (Hz)",
             yaxis_title="Level (dB)",
             xaxis=dict(
