@@ -118,7 +118,7 @@ class LineTransferMobility:
             yaxis_title="Level (dB)",
             xaxis_type="log"
         )
-        fig.show()
+        return fig
     
     def plot_measurements_level_vs_distance(self):
         fig = go.Figure()
@@ -130,7 +130,7 @@ class LineTransferMobility:
             xaxis_title="Distance (m)",
             yaxis_title="Level (dB)",
         )
-        fig.show()
+        return fig
     def plot_measurements_level_vs_frequency(self):
         fig = go.Figure()
         for d in self.distances:
@@ -145,13 +145,13 @@ class LineTransferMobility:
                 ticktext=self.band_centers,
             )
         )
-        fig.show()
+        return fig
 
     def plot_line_responses(self):
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=np.log10(self.band_centers), y=list(self.line_responses.values()), mode='markers+lines', name=f"{fc:.1f} Hz"))
+        fig.add_trace(go.Scatter(x=np.log10(self.band_centers), y=list(self.line_responses.values()), mode='markers+lines', name=f"{self.receiver_offset} m"))
         fig.update_layout(
-            title="Line responses",
+            title=f"Line responses",
             xaxis_title="Frequency (Hz)",
             yaxis_title="Level (dB)",
             xaxis=dict(
@@ -159,7 +159,7 @@ class LineTransferMobility:
                 ticktext=self.band_centers,
             )
         )
-        fig.show()
+        return fig
 
 
 # --- Example usage ---

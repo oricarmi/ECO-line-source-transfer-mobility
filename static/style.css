@@ -64,3 +64,27 @@ a {
 a:hover {
     text-decoration: underline;
 }
+
+.plot-container {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.plot-item {
+    width: 98%; /* Slightly less than 100% */
+    padding-bottom: 15px;
+    background-color: #f9f9f9;
+    clear: both;
+    box-sizing: border-box;
+}
+
+.plot-item > div {
+    width: 100% !important;
+    height: 500px !important;
+    min-height: 500px !important;
+}
+
+.js-plotly-plot {
+    width: 100% !important;
+    height: 500px !important;
+}

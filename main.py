@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
 import pandas as pd
-from preprocess_data import get_exact_impact_times, preprocess_data
+from utils import get_exact_impact_times, preprocess_data, read_csv_with_metadata
 from LSTM_from_PSTM import LineTransferMobility
 import numpy as np
 import plotly.graph_objects as go
@@ -52,7 +52,7 @@ async def analyze_data(
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
 
     # Process reference CSV (force measurements)
-    ref_df = pd.read_csv(ref_csv_path)
+    ref_df = read_csv_with_metadata(ref_csv_path)
     exact_impact_times = get_exact_impact_times(ref_df, impact_times_list)
     force_measurements = preprocess_data(ref_df, exact_impact_times)
 
@@ -60,7 +60,7 @@ async def analyze_data(
 
     # Process other CSVs (vibration measurements) and calculate transfer mobility
     for distance, other_csv_path in zip(channel_distances_list, other_csv_paths):
-        other_df = pd.read_csv(other_csv_path)
+        other_df = read_csv_with_metadata(other_csv_path)
         vibration_measurements = preprocess_data(other_df.iloc[1:, :], exact_impact_times)
 
         # Perform subtraction (Vibration Level - Force Level)
@@ -86,71 +86,21 @@ async def analyze_data(
     ltm.regress_point_sources()
     ltm.compute_all_line_responses()
 
-    # Generate Plotly figures
+    # Generate Plotly figures using LTM class methods
     plots = {}
-
-    # Plot 1: Point-source regressions
-    fig_point_regressions = go.Figure()
-    for fc, reg in ltm.point_regressions.items():
-        ds = np.logspace(np.log10(min(ltm.distances)), np.log10(max(ltm.distances)), 200)
-        fig_point_regressions.add_trace(go.Scatter(x=ds, y=reg["predict"](ds), mode='lines', name=f"{fc:.1f} Hz"))
-    fig_point_regressions.update_layout(
-        title="Point-source regressions",
-        xaxis_title="Log Distance (m)",
-        yaxis_title="Level (dB)",
-        xaxis_type="log"
-    )
-    plots["point_regressions"] = fig_point_regressions.to_html(full_html=False, include_plotlyjs='cdn')
-
-    # Plot 2: Measurements - Level vs Distance
-    fig_measurements_distance = go.Figure()
-    for band_center in ltm.band_centers:
-        levels = [ltm.measurements[d][band_center] for d in ltm.distances]
-        fig_measurements_distance.add_trace(go.Scatter(x=ltm.distances, y=levels, mode='markers+lines', name=f"{band_center:.1f} Hz"))
-    fig_measurements_distance.update_layout(
-        title="Measurements - Level vs Distance",
-        xaxis_title="Distance (m)",
-        yaxis_title="Level (dB)",
-    )
-    plots["measurements_level_vs_distance"] = fig_measurements_distance.to_html(full_html=False, include_plotlyjs='cdn')
-
-    # Plot 3: Measurements - Level vs Frequency
-    fig_measurements_frequency = go.Figure()
-    for d in ltm.distances:
-        levels = [ltm.measurements[d][fc] for fc in ltm.band_centers]
-        fig_measurements_frequency.add_trace(go.Scatter(x=np.log10(ltm.band_centers), y=levels, mode='markers+lines', name=f"{d} m"))
-    fig_measurements_frequency.update_layout(
-        title="Measurements - Level vs Frequency",
-        xaxis_title="Frequency (Hz)",
-        yaxis_title="Level (dB)",
-        xaxis=dict(
-            tickvals=np.log10(ltm.band_centers),
-            ticktext=ltm.band_centers,
-        )
-    )
-    plots["measurements_level_vs_frequency"] = fig_measurements_frequency.to_html(full_html=False, include_plotlyjs='cdn')
-
-    # Plot 4: Line responses
-    fig_line_responses = go.Figure()
-    fig_line_responses.add_trace(go.Scatter(x=np.log10(ltm.band_centers), y=list(ltm.line_responses.values()), mode='markers+lines'))
-    fig_line_responses.update_layout(
-        title=f"Line response - Receiver Distance {receiver_distance}m. Train Length {train_length}m",
-        xaxis_title="Frequency (Hz)",
-        yaxis_title="Level (dB)",
-        xaxis=dict(
-            tickvals=np.log10(ltm.band_centers),
-            ticktext=ltm.band_centers,
-        )
-    )
-    plots["line_responses"] = fig_line_responses.to_html(full_html=False, include_plotlyjs='cdn')
+    # plots["point_regressions"] = ltm.plot_point_regressions().to_html(full_html=False, include_plotlyjs=False)
+    plots["measurements_level_vs_distance"] = ltm.plot_measurements_level_vs_distance().to_html(full_html=False, include_plotlyjs=False)
+    plots["measurements_level_vs_frequency"] = ltm.plot_measurements_level_vs_frequency().to_html(full_html=False, include_plotlyjs=False)
+    plots["line_responses"] = ltm.plot_line_responses().to_html(full_html=False, include_plotlyjs=False)
 
     # Clean up temporary files
     os.remove(ref_csv_path)
     for other_csv_path in other_csv_paths:
         os.remove(other_csv_path)
     os.rmdir(temp_dir)
-
-    return templates.TemplateResponse("results.html", {"request": request, "plots": plots})
+    subtitle = f"train_length = {train_length}m, receiver_offset = {receiver_distance}m, source_depth = {source_depth}m"
+    subtitle2 = f"impact times = {[int(t) for t in exact_impact_times]}"
+    return templates.TemplateResponse("results.html", {"request": request, "plots": plots, "subtitle": subtitle, "subtitle2": subtitle2})
 
 if __name__ == "__main__":
     if not os.path.exists("templates"):

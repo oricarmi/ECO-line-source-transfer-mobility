@@ -3,22 +3,40 @@
 <head>
     <title>Analysis Results</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <h1>Vibration Impact Analysis Results</h1>
+    <h2>{{subtitle}}</h2>
+    <h2>{{subtitle2}}</h2>
     {% if error %}
         <p style="color: red;">{{ error }}</p>
     {% elif plots %}
+        <div class="plot-container">
         {% for plot_name, plot_div in plots.items() %}
-            <h2>{{ plot_name.replace("_", " ").title() }}</h2>
-            <div>
-                {{ plot_div | safe }}
+            <div class="plot-item">
+                <div>
+                    {{ plot_div | safe }}
+                </div>
             </div>
         {% endfor %}
+        </div>
     {% else %}
         <p>No results to display.</p>
     {% endif %}
     <br>
-    <a href="/">Go Back</a>
+    <div><a href="/">Go Back</a></div>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Ensure plots resize properly in flex containers
+        setTimeout(function() {
+            var plots = document.querySelectorAll('.js-plotly-plot');
+            plots.forEach(function(plot) {
+                Plotly.Plots.resize(plot);
+            });
+        }, 100);
+    });
+    </script>
 </body>
 </html>
