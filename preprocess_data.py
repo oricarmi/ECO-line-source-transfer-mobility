@@ -31,7 +31,7 @@ def preprocess_data(data: pd.DataFrame, force_measurements, exact_impact_times: 
     """
     measurements = {}
     # Ensure 'Time' column is numeric
-    data = data.iloc[1:, THIRD_OCTAVE_BANDS.keys()]
+    data = data.iloc[1:, :]
     data2 = (data[data["Time"].isin(exact_impact_times)] - force_measurements[force_measurements["Time"].isin(exact_impact_times)]).mean()
     averaged_measurements = {}
     for band_str, band in THIRD_OCTAVE_BANDS.items():
