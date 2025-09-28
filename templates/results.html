@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analysis Results</title>
+</head>
+<body>
+    <h1>Vibration Impact Analysis Results</h1>
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% elif plots %}
+        {% for plot_name, plot_div in plots.items() %}
+            <h2>{{ plot_name.replace("_", " ").title() }}</h2>
+            <div>
+                {{ plot_div | safe }}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No results to display.</p>
+    {% endif %}
+    <br>
+    <a href="/">Go Back</a>
+</body>
+</html>

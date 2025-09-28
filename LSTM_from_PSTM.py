@@ -21,7 +21,6 @@ Main methods:
 import numpy as np
 import plotly.graph_objects as go
 
-# hi itamar 2
 class LineTransferMobility:
     def __init__(self, measurements, train_length, receiver_offset, source_depth=0.0):
         """
