@@ -7,10 +7,10 @@
         <body>
             <h1>Upload Data for Vibration Impact Analysis</h1>
             <form action="/analyze" method="post" enctype="multipart/form-data">
-                <label for="reference_csv">Reference CSV:</label><br>
+                <label for="reference_csv">Force CSV:</label><br>
                 <input type="file" id="reference_csv" name="reference_csv"><br><br>
                 
-                <label for="other_csvs">Other CSV Files (can upload multiple):</label><br>
+                <label for="other_csvs">Vibration Measurements CSV Files (can upload multiple):</label><br>
                 <input type="file" id="other_csvs" name="other_csvs" multiple><br><br>
                 
                 <label for="channel_distances">Channel Distances (comma-separated):</label><br>
@@ -20,10 +20,10 @@
                 <input type="text" id="impact_times" name="impact_times"><br><br>
                 
                 <label for="train_length">Train Length (m):</label><br>
-                <input type="number" id="train_length" name="train_length" step="any"><br><br>
+                <input type="number" id="train_length" name="train_length" step="any" value="70.0"><br><br>
                 
                 <label for="receiver_distance">Receiver Distance (m):</label><br>
-                <input type="number" id="receiver_distance" name="receiver_distance" step="any"><br><br>
+                <input type="number" id="receiver_distance" name="receiver_distance" step="any" value="25.0"><br><br>
                 
                 <label for="source_depth">Source Depth (m):</label><br>
                 <input type="number" id="source_depth" name="source_depth" step="any" value="0.0"><br><br>
