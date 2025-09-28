@@ -6,10 +6,10 @@ from conf import THIRD_OCTAVE_BANDS, IMPACT_SEARCH_RANGE
 
 def get_exact_impact_times(data: pd.DataFrame, impact_times: list[float]) -> list[float]:
     impact_times_exact = []
+    data["Time"] = pd.to_numeric(data["Time"]) # Ensure 'Time' is numeric
+    delta_t = data["Time"].iloc[1] - data["Time"].iloc[0]
+
     for impact_time in impact_times:
-        # Ensure 'Time' column is numeric for comparison
-        data["Time"] = pd.to_numeric(data["Time"])
-        delta_t = data["Time"].iloc[1] - data["Time"].iloc[0]
         # Filter data within the search range
         filtered_data = data[(data["Time"] > impact_time - IMPACT_SEARCH_RANGE / delta_t) & (data["Time"] < impact_time + IMPACT_SEARCH_RANGE / delta_t)]
         
@@ -24,17 +24,38 @@ def get_exact_impact_times(data: pd.DataFrame, impact_times: list[float]) -> lis
 
     return impact_times_exact
 
-def preprocess_data(data: pd.DataFrame, force_measurements, exact_impact_times: list[float]) -> dict:
+def preprocess_data(data: pd.DataFrame, exact_impact_times: list[float]) -> dict:
     """
     Preprocess the data to extract 1/3 octave band levels at exact impact times
     and return the average levels across all impacts.
     """
-    measurements = {}
+    all_band_levels_for_averaging = {band_center: [] for band_center in THIRD_OCTAVE_BANDS.values()}
+    
     # Ensure 'Time' column is numeric
-    data = data.iloc[1:, :]
-    data2 = (data[data["Time"].isin(exact_impact_times)] - force_measurements[force_measurements["Time"].isin(exact_impact_times)]).mean()
-    averaged_measurements = {}
-    for band_str, band in THIRD_OCTAVE_BANDS.items():
-        averaged_measurements[band] = data2[band_str]
+    data["Time"] = pd.to_numeric(data["Time"])
 
+    # Convert all band columns to numeric
+    for band_str in THIRD_OCTAVE_BANDS.keys():
+        if band_str in data.columns:
+            data[band_str] = pd.to_numeric(data[band_str], errors='coerce')
+
+    # Filter data based on exact impact times and collect band levels
+    for impact_time in exact_impact_times:
+        impact_row = data[np.isclose(data["Time"], impact_time)]
+        
+        if not impact_row.empty:
+            impact_row = impact_row.iloc[0] # Get the first matching row
+            for band_str, band_center in THIRD_OCTAVE_BANDS.items():
+                if band_str in impact_row and not pd.isna(impact_row[band_str]):
+                    all_band_levels_for_averaging[band_center].append(impact_row[band_str])
+        else:
+            print(f"Warning: No data found for exact impact time {impact_time}")
+            
+    averaged_measurements = {}
+    for band_center, levels in all_band_levels_for_averaging.items():
+        if levels:
+            averaged_measurements[band_center] = np.mean(levels)
+        else:
+            averaged_measurements[band_center] = np.nan # Handle cases where no data was collected for a band
+    
     return averaged_measurements

@@ -48,19 +48,31 @@ async def analyze_data(
     channel_distances_list = [float(d.strip()) for d in channel_distances.split(',')]
     impact_times_list = [float(t.strip()) for t in impact_times.split(',')]
 
-    # Process reference CSV
-    ref_df = pd.read_csv(ref_csv_path)
-    exact_impact_times = get_exact_impact_times(ref_df.iloc[1:, :], impact_times_list)
-
     if len(channel_distances_list) != len(other_csv_paths):
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
 
+    # Process reference CSV (force measurements)
+    ref_df = pd.read_csv(ref_csv_path)
+    exact_impact_times = get_exact_impact_times(ref_df, impact_times_list)
+    force_measurements = preprocess_data(ref_df, exact_impact_times)
 
-    # Process other channels (not ref)
     ltm_measurements = {}
-    for i, other_csv_path in enumerate(other_csv_paths):
-        df = pd.read_csv(other_csv_path)
-        ltm_measurements[channel_distances_list[i]] = preprocess_data(df, ref_df, exact_impact_times)
+
+    # Process other CSVs (vibration measurements) and calculate transfer mobility
+    for distance, other_csv_path in zip(channel_distances_list, other_csv_paths):
+        other_df = pd.read_csv(other_csv_path)
+        vibration_measurements = preprocess_data(other_df.iloc[1:, :], exact_impact_times)
+
+        # Perform subtraction (Vibration Level - Force Level)
+        current_distance_measurements = {}
+        for band_center, vib_level in vibration_measurements.items():
+            force_level = force_measurements.get(band_center, np.nan)
+            if not pd.isna(vib_level) and not pd.isna(force_level):
+                current_distance_measurements[band_center] = vib_level - force_level
+            else:
+                current_distance_measurements[band_center] = np.nan # Or handle as appropriate
+        
+        ltm_measurements[distance] = current_distance_measurements
 
     # Initialize LineTransferMobility
     ltm = LineTransferMobility(
