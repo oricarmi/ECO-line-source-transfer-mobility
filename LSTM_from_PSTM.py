@@ -40,6 +40,8 @@ class LineTransferMobility:
         for fc in self.band_centers:
             log_measurements = [10 * np.log10(self.measurements[d][fc]) for d in self.distances]
             a, b, predict = self.regress_levels_vs_distance(self.distances, log_measurements)
+            if 20 < b < 40:
+                print(f"Warning: slope for {fc} is not in [-20, -40] range ({b})")
             self.point_regressions[fc] = {"a": a, "b": b, "predict": predict}
         return self.point_regressions
 
@@ -94,7 +96,6 @@ class LineTransferMobility:
         
         fig = go.Figure()
         for fc, reg in self.point_regressions.items():
-            print(f"slope for {fc}: {reg["b"]}")
             ds = np.logspace(1.0, max(self.distances)+10, 200)
             fig.add_trace(go.Scatter(x=ds, y=list(reg["predict"](ds)), mode='lines', name=f"{fc:.1f} Hz"))
         fig.update_layout(
@@ -129,7 +130,7 @@ class LineTransferMobility:
         fig = go.Figure()
         for d in self.distances:
             levels = [10 * np.log10(self.measurements[d][fc] / V_Ref) for fc in self.band_centers]
-            fig.add_trace(go.Scatter(x=np.log10(self.band_centers), y=levels, mode='markers+lines', name=f"{d} m"))
+            fig.add_trace(go.Scatter(x=self.band_centers, y=levels, mode='markers+lines', name=f"{d} m"))
         fig.update_layout(
             title="Velocity Measurements vs Frequency",
             xaxis_title="Frequency (Hz)",
