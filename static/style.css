@@ -80,11 +80,11 @@ a:hover {
 
 .plot-item > div {
     width: 100% !important;
-    height: 500px !important;
-    min-height: 500px !important;
+    height: 800px !important;
+    min-height: 800px !important;
 }
 
 .js-plotly-plot {
     width: 100% !important;
-    height: 500px !important;
+    height: 800px !important;
 }

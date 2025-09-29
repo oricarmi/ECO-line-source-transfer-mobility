@@ -1,42 +1,24 @@
-"""
-line_transfer_mobility_class.py
-
-Reusable class for line transfer mobility computation
-when 1/3-octave band levels are already measured.
-
-Inputs at initialization:
-  - measurements: dict of {distance_m : {band_center_Hz : level_dB}}
-  - train_length: length of train (m)
-  - receiver_offset: lateral receiver distance from track centerline (m)
-  - source_depth: depth of source below receiver (optional, default=0.0)
-
-Main methods:
-  - regress_point_sources()
-  - compute_line_response(band_center)
-  - compute_all_line_responses()
-  - regress_line_response_vs_distance()
-
-"""
-
 import numpy as np
 import plotly.graph_objects as go
+from conf import V_Ref, F_Ref
 
 class LineTransferMobility:
-    def __init__(self, measurements, train_length, receiver_offset, source_depth=0.0):
+    def __init__(self, velocity_measurements, force_measurements, train_length, receiver_offset, source_depth=0.0):
         """
-        measurements: dict {distance (m): {band_center (Hz): level_dB}}
+        velocity measurements: dict {distance (m): {band_center (Hz): level (m/s)}}
+        force_measurements: dict {band center (Hz): level (N)}
         train_length: float, train length in meters
         receiver_offset: float, receiver distance from track centerline (m)
         source_depth: float, optional, vertical source depth (m)
         """
-        self.measurements = measurements
-        self.distances = sorted(measurements.keys())
+        self.force_measurements = force_measurements
+        self.measurements = velocity_measurements
+        self.distances = sorted(velocity_measurements.keys())
         # collect all band centers from the first entry
-        self.band_centers = sorted(list(next(iter(measurements.values())).keys()))
+        self.band_centers = sorted(list(next(iter(velocity_measurements.values())).keys()))
         self.train_length = train_length
         self.receiver_offset = receiver_offset
         self.source_depth = source_depth
-
         self.point_regressions = {}  # band -> {"a","b","predict"}
         self.line_responses = {}     # band -> line response level (dB)
 
@@ -56,29 +38,32 @@ class LineTransferMobility:
     def regress_point_sources(self):
         """Perform regression for all band centers."""
         for fc in self.band_centers:
-            levels = [self.measurements[d][fc] for d in self.distances]
-            a, b, predict = self.regress_levels_vs_distance(self.distances, levels)
+            log_measurements = [10 * np.log10(self.measurements[d][fc]) for d in self.distances]
+            a, b, predict = self.regress_levels_vs_distance(self.distances, log_measurements)
             self.point_regressions[fc] = {"a": a, "b": b, "predict": predict}
         return self.point_regressions
 
     # --- Integration over train length ---
-    def integrate_line_response(self, predict_level_db_fn, num_segments=801):
+    def integrate_line_response(self, predict_level_db_fn, F, num_segments=801):
         xs = np.linspace(-self.train_length/2, self.train_length/2, num_segments)
         slant = np.sqrt(self.receiver_offset**2 + xs**2 + self.source_depth**2)
         point_db = predict_level_db_fn(slant)
-
         # energy sum
-        linear_powers = 10 ** (point_db / 10.0)
-        sum_power = np.sum(linear_powers) * (self.train_length / num_segments)
-        line_db = 10 * np.log10(sum_power + np.finfo(float).eps)
-        return line_db, xs, point_db
+        point_linear = 10 ** (point_db / 20.0)
+        normalized_linear_power = (point_linear / F) ** 2
+        sum_power = np.trapezoid(normalized_linear_power, xs)
+        y_l = np.sqrt(sum_power / self.train_length + np.finfo(float).eps)
+        y_ref = V_Ref / F_Ref
+        line_db = 20 * np.log10(y_l / y_ref)
+        return line_db
 
     def compute_line_response(self, band_center):
         """Compute line response for a single band."""
         if not self.point_regressions:
             self.regress_point_sources()
         reg = self.point_regressions[band_center]
-        line_db, xs, point_db = self.integrate_line_response(reg["predict"])
+        F = self.force_measurements[band_center]
+        line_db = self.integrate_line_response(reg["predict"], F)
         self.line_responses[band_center] = line_db
         return line_db
 
@@ -109,55 +94,58 @@ class LineTransferMobility:
         
         fig = go.Figure()
         for fc, reg in self.point_regressions.items():
-            ds = np.logspace(np.log10(min(self.distances)), np.log10(max(self.distances)), 200)
-            fig.add_trace(go.Scatter(x=ds, y=reg["predict"](ds), mode='lines', name=f"{fc:.1f} Hz"))
-
+            print(f"slope for {fc}: {reg["b"]}")
+            ds = np.logspace(1.0, max(self.distances)+10, 200)
+            fig.add_trace(go.Scatter(x=ds, y=list(reg["predict"](ds)), mode='lines', name=f"{fc:.1f} Hz"))
         fig.update_layout(
             title="Point-source regressions",
             xaxis_title="Log Distance (m)",
             yaxis_title="Level (dB)",
-            xaxis_type="log"
         )
         return fig
     
+    def plot_force_measurements(self):
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=self.band_centers, y=list(self.force_measurements.values()), mode="markers+lines"))
+        fig.update_layout(
+            title="Force Measurements",
+            xaxis_title="Frequency (Hz)",
+            yaxis_title="Level (dB rel 1N)",
+            xaxis=dict(type="log"))
+        return fig
+
     def plot_measurements_level_vs_distance(self):
         fig = go.Figure()
         for band_center in self.band_centers:
-            levels = [self.measurements[d][band_center] for d in self.distances]
+            levels = [10 * np.log10(self.measurements[d][band_center] / V_Ref) for d in self.distances]
             fig.add_trace(go.Scatter(x=self.distances, y=levels, mode='markers+lines', name=f"{band_center:.1f} Hz"))
         fig.update_layout(
-            title="Measurements - Level vs Distance",
+            title="Velocity Measurements vs Distance",
             xaxis_title="Distance (m)",
-            yaxis_title="Level (dB)",
+            yaxis_title="Level (dB rel 50nm/sec)",
         )
         return fig
     def plot_measurements_level_vs_frequency(self):
         fig = go.Figure()
         for d in self.distances:
-            levels = [self.measurements[d][fc] for fc in self.band_centers]
+            levels = [10 * np.log10(self.measurements[d][fc] / V_Ref) for fc in self.band_centers]
             fig.add_trace(go.Scatter(x=np.log10(self.band_centers), y=levels, mode='markers+lines', name=f"{d} m"))
         fig.update_layout(
-            title="Measurements - Level vs Frequency",
+            title="Velocity Measurements vs Frequency",
             xaxis_title="Frequency (Hz)",
-            yaxis_title="Level (dB)",
-            xaxis=dict(
-                tickvals=np.log10(self.band_centers),
-                ticktext=self.band_centers,
-            )
+            yaxis_title="Level (dB rel 50nm/sec)",
+            xaxis=dict(type="log")
         )
         return fig
 
     def plot_line_responses(self):
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=np.log10(self.band_centers), y=list(self.line_responses.values()), mode='markers+lines', name=f"{self.receiver_offset} m"))
+        fig.add_trace(go.Scatter(x=self.band_centers, y=list(self.line_responses.values()), mode='markers+lines', name=f"{self.receiver_offset} m"))
         fig.update_layout(
-            title=f"Line responses",
+            title=f"LSTM",
             xaxis_title="Frequency (Hz)",
-            yaxis_title="Level (dB)",
-            xaxis=dict(
-                tickvals=np.log10(self.band_centers),
-                ticktext=self.band_centers,
-            )
+            yaxis_title="Level (dB rel 50nm/sec / (N/sqrt(m)))",
+            xaxis=dict(type="log")
         )
         return fig
 

@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
 import pandas as pd
-from utils import get_exact_impact_times, preprocess_data, read_csv_with_metadata
+from utils import preprocess_data, read_csv_with_metadata, plot_all_line_responses
 from LSTM_from_PSTM import LineTransferMobility
 import numpy as np
 import plotly.graph_objects as go
@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -26,81 +27,89 @@ async def analyze_data(
     channel_distances: str = Form(...),
     impact_times: str = Form(...),
     train_length: float = Form(...),
-    receiver_distance: float = Form(...),
+    receiver_distances: str = Form(...),
     source_depth: float = Form(0.0)
 ):
     # Save uploaded files temporarily
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
 
-    ref_csv_path = os.path.join(temp_dir, reference_csv.filename)
-    with open(ref_csv_path, "wb") as buffer:
+    force_csv_path = os.path.join(temp_dir, reference_csv.filename)
+    with open(force_csv_path, "wb") as buffer:
         buffer.write(await reference_csv.read())
 
-    other_csv_paths = []
+    vibration_csv_paths = []
     for csv_file in other_csvs:
         file_path = os.path.join(temp_dir, csv_file.filename)
         with open(file_path, "wb") as buffer:
             buffer.write(await csv_file.read())
-        other_csv_paths.append(file_path)
+        vibration_csv_paths.append(file_path)
 
     # Parse channel_distances and impact_times
     channel_distances_list = [float(d.strip()) for d in channel_distances.split(',')]
     impact_times_list = [float(t.strip()) for t in impact_times.split(',')]
+    receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',')]
 
-    if len(channel_distances_list) != len(other_csv_paths):
+    if len(channel_distances_list) != len(vibration_csv_paths):
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
 
     # Process reference CSV (force measurements)
-    ref_df = read_csv_with_metadata(ref_csv_path)
-    exact_impact_times = get_exact_impact_times(ref_df, impact_times_list)
-    force_measurements = preprocess_data(ref_df, exact_impact_times)
-
-    ltm_measurements = {}
-
+    force_df = read_csv_with_metadata(force_csv_path)
+    force_df.name = "force_df"
+    force_measurements = preprocess_data(force_df, impact_times_list)
+    force_measurements = {k: np.median(np.array(v)) for k, v in force_measurements.items()}
+    pstm_measurements = {}
+    channel_nums = [int(p[p.find('CH')+2]) for p in vibration_csv_paths]
+    offset = min(channel_nums)
     # Process other CSVs (vibration measurements) and calculate transfer mobility
-    for distance, other_csv_path in zip(channel_distances_list, other_csv_paths):
-        other_df = read_csv_with_metadata(other_csv_path)
-        vibration_measurements = preprocess_data(other_df.iloc[1:, :], exact_impact_times)
+    for vib_channel_csv_path in vibration_csv_paths:
+        ind = int(vib_channel_csv_path[vib_channel_csv_path.find('CH')+2]) - offset
+        other_df = read_csv_with_metadata(vib_channel_csv_path)
+        other_df.name = vib_channel_csv_path[-7:-3]
+        vibration_measurements = preprocess_data(other_df, impact_times_list)
 
         # Perform subtraction (Vibration Level - Force Level)
         current_distance_measurements = {}
         for band_center, vib_level in vibration_measurements.items():
-            force_level = force_measurements.get(band_center, np.nan)
-            if not pd.isna(vib_level) and not pd.isna(force_level):
-                current_distance_measurements[band_center] = vib_level - force_level
+            force_level = force_measurements.get(band_center, [])
+            if not np.any(np.isnan(vib_level)) and not np.any(np.isnan(force_level)):
+                current_distance_measurements[band_center] = np.median(np.array(vib_level))
             else:
                 current_distance_measurements[band_center] = np.nan # Or handle as appropriate
         
-        ltm_measurements[distance] = current_distance_measurements
+        pstm_measurements[channel_distances_list[ind]] = current_distance_measurements
+    ltm_list = []
+    for rd in receiver_distances_list:
+        # Initialize LineTransferMobility
+        ltm = LineTransferMobility(
+            force_measurements=force_measurements,
+            velocity_measurements=pstm_measurements,
+            train_length=train_length,
+            receiver_offset=rd,
+            source_depth=source_depth
+        )
+        # Perform calculations and generate plots
+        ltm.regress_point_sources()
+        ltm.compute_all_line_responses()
+        ltm_list.append(ltm)
 
-    # Initialize LineTransferMobility
-    ltm = LineTransferMobility(
-        measurements=ltm_measurements,
-        train_length=train_length,
-        receiver_offset=receiver_distance,
-        source_depth=source_depth
-    )
-
-    # Perform calculations and generate plots
-    ltm.regress_point_sources()
-    ltm.compute_all_line_responses()
 
     # Generate Plotly figures using LTM class methods
     plots = {}
-    # plots["point_regressions"] = ltm.plot_point_regressions().to_html(full_html=False, include_plotlyjs=False)
-    plots["measurements_level_vs_distance"] = ltm.plot_measurements_level_vs_distance().to_html(full_html=False, include_plotlyjs=False)
-    plots["measurements_level_vs_frequency"] = ltm.plot_measurements_level_vs_frequency().to_html(full_html=False, include_plotlyjs=False)
-    plots["line_responses"] = ltm.plot_line_responses().to_html(full_html=False, include_plotlyjs=False)
+    plots["point_regressions"] = ltm_list[0].plot_point_regressions().to_html(full_html=False, include_plotlyjs=False)
+    plots["force_measurements"] = ltm_list[0].plot_force_measurements().to_html(full_html=False, include_plotlyjs=False)
+    plots["measurements_level_vs_distance"] = ltm_list[0].plot_measurements_level_vs_distance().to_html(full_html=False, include_plotlyjs=False)
+    plots["measurements_level_vs_frequency"] = ltm_list[0].plot_measurements_level_vs_frequency().to_html(full_html=False, include_plotlyjs=False)
+    plots["all_line_responses"] = plot_all_line_responses(ltm_list).to_html(full_html=False, include_plotlyjs=False)
 
     # Clean up temporary files
-    os.remove(ref_csv_path)
-    for other_csv_path in other_csv_paths:
-        os.remove(other_csv_path)
+    os.remove(force_csv_path)
+    for vib_channel_csv_path in vibration_csv_paths:
+        os.remove(vib_channel_csv_path)
     os.rmdir(temp_dir)
-    subtitle = f"train_length = {train_length}m, receiver_offset = {receiver_distance}m, source_depth = {source_depth}m"
-    subtitle2 = f"impact times = {[int(t) for t in exact_impact_times]}"
-    return templates.TemplateResponse("results.html", {"request": request, "plots": plots, "subtitle": subtitle, "subtitle2": subtitle2})
+
+    subtitle = f"train_length = {train_length}m, source_depth = {source_depth}m"
+    return templates.TemplateResponse("results.html", {"request": request, "plots": plots, "subtitle": subtitle})
 
 if __name__ == "__main__":
     if not os.path.exists("templates"):
@@ -132,8 +141,8 @@ if __name__ == "__main__":
                 <label for="train_length">Train Length (m):</label><br>
                 <input type="number" id="train_length" name="train_length" step="any"><br><br>
                 
-                <label for="receiver_distance">Receiver Distance (m):</label><br>
-                <input type="number" id="receiver_distance" name="receiver_distance" step="any"><br><br>
+                <label for="receiver_distances">Receiver Distances (m):</label><br>
+                <input type="text" id="receiver_distances" name="receiver_distances"><br><br>
                 
                 <label for="source_depth">Source Depth (m):</label><br>
                 <input type="number" id="source_depth" name="source_depth" step="any" value="0.0"><br><br>
