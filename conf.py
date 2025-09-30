@@ -2,3 +2,15 @@ THIRD_OCTAVE_BANDS = {'4 Hz': 4, '5 Hz': 5, '6.3 Hz': 6.3, '8 Hz': 8, '10 Hz': 1
 IMPACT_SEARCH_RANGE = 5 # seconds
 V_Ref = 5e-8 # 500 nanometer
 F_Ref = 1
+
+y_axis_titles_pstm = {
+    "imperial": "dB rel microin/s/ lbf",
+    "metric": "dB rel (5*10^-8 m/sec) / N"
+}
+y_axis_titles_lstm = {
+    "imperial": "dB rel (microin/s) / (lbf/sqrt(in))",
+    "metric": "dB rel (5*10^-8 m/sec) / (N/sqrt(m))"
+}
+
+metric_to_empirial_pstm = 18.887 # dB (add this to the metric to get to imperial)
+metric_to_empirial_lstm = 34.8 # dB (add this to the metric to get to imperial)

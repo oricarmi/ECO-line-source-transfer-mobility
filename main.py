@@ -29,7 +29,8 @@ async def analyze_data(
     train_length: float = Form(...),
     receiver_distances: str = Form(...),
     source_depth: float = Form(0.0),
-    save_path: str = Form("")
+    save_path: str = Form(""),
+    units: str = Form("metric")
 ):
     # Save uploaded files temporarily
     temp_dir = "temp_uploads"
@@ -97,9 +98,9 @@ async def analyze_data(
     plots = {}
     fig_pr = ltm_list[0].plot_point_regressions()
     fig_fm = ltm_list[0].plot_force_measurements()
-    fig_pstm_distance = ltm_list[0].plot_measurements_level_vs_distance()
-    fig_pstm_frequency = ltm_list[0].plot_measurements_level_vs_frequency()
-    fig_lstms = plot_all_line_responses(ltm_list)
+    fig_pstm_distance = ltm_list[0].plot_pstm_level_vs_distance(units=units)
+    fig_pstm_frequency = ltm_list[0].plot_pstm_level_vs_frequency(units=units)
+    fig_lstms = plot_all_line_responses(ltm_list, units=units)
     if save_path:
         project_name = os.path.basename(force_csv_path)[:os.path.basename(force_csv_path).find('Velocity')]
         fig_pr.write_image(os.path.join(save_path, f"{project_name}_point_regressions.png"))
@@ -117,7 +118,7 @@ async def analyze_data(
             line_responses_df.to_csv(os.path.join(save_path, f"{project_name}_lstm_receiver_{ltm_instance.receiver_offset}m.csv"), index=False)
 
     plots["point_regressions"] = fig_pr.to_html(full_html=False, include_plotlyjs=False)
-    plots["force_measurements"] = fig_fm.to_html(full_html=False, include_plotlyjs=False)
+    # plots["force_measurements"] = fig_fm.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_distance"] = fig_pstm_distance.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_frequency"] = fig_pstm_frequency.to_html(full_html=False, include_plotlyjs=False)
     plots["all_line_responses"] = fig_lstms.to_html(full_html=False, include_plotlyjs=False)

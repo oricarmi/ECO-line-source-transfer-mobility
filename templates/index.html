@@ -8,8 +8,8 @@
         <body>
             <h1>Upload Data for Vibration Impact Analysis</h1>
             <form action="/analyze" method="post" enctype="multipart/form-data">
-                <label for="reference_csv">Force CSV:</label><br>
-                <input type="file" id="reference_csv" name="reference_csv"><br><br>
+                <label for="force_csv">Force CSV:</label><br>
+                <input type="file" id="force_csv" name="force_csv"><br><br>
 
                 <label for="other_csvs">Vibration Measurements CSV Files (can upload multiple):</label><br>
                 <input type="file" id="other_csvs" name="other_csvs" multiple><br><br>
@@ -25,10 +25,19 @@
 
                 <label for="receiver_distances">Receiver Distances (m):</label><br>
                 <input type="text" id="receiver_distances" name="receiver_distances"><br><br>
-                
+
                 <label for="source_depth">Source Depth (m):</label><br>
                 <input type="number" id="source_depth" name="source_depth" step="any" value="0.0"><br><br>
+
+                <label for="save_path">Save Results Path (optional):</label><br>
+                <input type="text" id="save_path" name="save_path"><br><br>
                 
+                <label>Units:</label><br>
+                <input type="radio" id="metric" name="units" value="metric" checked>
+                <label for="metric">Metric</label><br>
+                <input type="radio" id="imperial" name="units" value="imperial">
+                <label for="imperial">Imperial</label><br><br>
+
                 <input type="submit" value="Analyze">
             </form>
         </body>

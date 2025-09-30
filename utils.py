@@ -3,7 +3,7 @@ import numpy as np
 import os
 import json
 from io import StringIO
-from conf import THIRD_OCTAVE_BANDS, IMPACT_SEARCH_RANGE
+from conf import THIRD_OCTAVE_BANDS, IMPACT_SEARCH_RANGE, y_axis_titles_lstm, metric_to_empirial_lstm
 import plotly.graph_objs as go
 
 def read_csv_with_metadata(filename):
@@ -58,14 +58,20 @@ def preprocess_data(data: pd.DataFrame, impact_times: list[float]) -> dict:
     return all_band_levels_for_averaging
 
 
-def plot_all_line_responses(all_ltm_objs: list) -> go.Figure:
+def plot_all_line_responses(all_ltm_objs: list, units="metric") -> go.Figure:
     fig = go.Figure()
     for ltm in all_ltm_objs:
-        fig.add_trace(go.Scatter(x=ltm.band_centers, y=list(ltm.lstm.values()), mode='markers+lines', name=f"{ltm.receiver_offset} m"))
+        vals = np.array(list(ltm.lstm.values()))
+        if units == "imperial":
+            vals += metric_to_empirial_lstm
+        fig.add_trace(go.Scatter(x=ltm.band_centers, y=list(vals), mode='markers+lines', name=f"{ltm.receiver_offset} m"))
     fig.update_layout(
         title="Line Source Transfer Mobility for Different Receiver Distances",
         xaxis_title="Frequency (Hz)",
-        yaxis_title="Level (dB rel 50nm/sec / (N/sqrt(m)) )",
+        yaxis_title=y_axis_titles_lstm[units],
         xaxis=dict(type="log")
     )
     return fig
+
+def exponential_decay(distance, A, alpha, C):
+    return A * np.exp(-alpha * distance) + C
