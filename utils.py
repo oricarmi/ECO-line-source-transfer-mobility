@@ -61,9 +61,9 @@ def preprocess_data(data: pd.DataFrame, impact_times: list[float]) -> dict:
 def plot_all_line_responses(all_ltm_objs: list) -> go.Figure:
     fig = go.Figure()
     for ltm in all_ltm_objs:
-        fig.add_trace(go.Scatter(x=ltm.band_centers, y=list(ltm.line_responses.values()), mode='markers+lines', name=f"{ltm.receiver_offset} m"))
+        fig.add_trace(go.Scatter(x=ltm.band_centers, y=list(ltm.lstm.values()), mode='markers+lines', name=f"{ltm.receiver_offset} m"))
     fig.update_layout(
-        title="Line Responses for Different Receiver Distances",
+        title="Line Source Transfer Mobility for Different Receiver Distances",
         xaxis_title="Frequency (Hz)",
         yaxis_title="Level (dB rel 50nm/sec / (N/sqrt(m)) )",
         xaxis=dict(type="log")
