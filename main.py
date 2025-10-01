@@ -5,10 +5,10 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
 import pandas as pd
-from utils import preprocess_data, read_csv_with_metadata, plot_all_line_responses
-from LSTM_from_PSTM import LineTransferMobility
 import numpy as np
 import plotly.graph_objects as go
+from utils import preprocess_data, read_csv_with_metadata, plot_all_line_responses
+from LSTM_from_PSTM import LineTransferMobility
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -66,9 +66,9 @@ async def analyze_data(
     # Process other CSVs (vibration measurements) and calculate transfer mobility
     for vib_channel_csv_path in vibration_csv_paths:
         ind = int(vib_channel_csv_path[vib_channel_csv_path.find('CH')+2]) - offset
-        other_df = read_csv_with_metadata(vib_channel_csv_path)
-        other_df.name = vib_channel_csv_path[-7:-3]
-        vibration_measurements = preprocess_data(other_df, impact_times_list)
+        vib_df = read_csv_with_metadata(vib_channel_csv_path)
+        vib_df.name = vib_channel_csv_path[-7:-3]
+        vibration_measurements = preprocess_data(vib_df, impact_times_list)
 
         # Perform subtraction (Vibration Level - Force Level)
         current_distance_measurements = {}
@@ -92,11 +92,11 @@ async def analyze_data(
         )
         # Perform calculations and generate plots
         ltm.regress_point_sources()
-        ltm.compute_all_line_responses()
+        ltm.compute_lstms_all_freqs()
         ltm_list.append(ltm)
     # Generate Plotly figures using LTM class methods
     plots = {}
-    fig_pr = ltm_list[0].plot_point_regressions()
+    fig_pr = ltm_list[0].plot_point_regressions(units=units)
     fig_fm = ltm_list[0].plot_force_measurements()
     fig_pstm_distance = ltm_list[0].plot_pstm_level_vs_distance(units=units)
     fig_pstm_frequency = ltm_list[0].plot_pstm_level_vs_frequency(units=units)
@@ -118,7 +118,7 @@ async def analyze_data(
             line_responses_df.to_csv(os.path.join(save_path, f"{project_name}_lstm_receiver_{ltm_instance.receiver_offset}m.csv"), index=False)
 
     plots["point_regressions"] = fig_pr.to_html(full_html=False, include_plotlyjs=False)
-    # plots["force_measurements"] = fig_fm.to_html(full_html=False, include_plotlyjs=False)
+    plots["force_measurements"] = fig_fm.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_distance"] = fig_pstm_distance.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_frequency"] = fig_pstm_frequency.to_html(full_html=False, include_plotlyjs=False)
     plots["all_line_responses"] = fig_lstms.to_html(full_html=False, include_plotlyjs=False)

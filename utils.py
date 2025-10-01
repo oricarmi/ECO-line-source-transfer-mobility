@@ -7,6 +7,7 @@ from conf import THIRD_OCTAVE_BANDS, IMPACT_SEARCH_RANGE, y_axis_titles_lstm, me
 import plotly.graph_objs as go
 
 def read_csv_with_metadata(filename):
+    # read the raw csv from samurai and return a pandas dataframe
     # Read the entire file as text
     with open(filename, 'r', encoding='cp1252') as file:
         lines = file.readlines()
