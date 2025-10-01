@@ -96,7 +96,7 @@ async def analyze_data(
         ltm_list.append(ltm)
     # Generate Plotly figures using LTM class methods
     plots = {}
-    fig_pr = ltm_list[0].plot_point_regressions()
+    fig_pr = ltm_list[0].plot_point_regressions(units=units)
     fig_fm = ltm_list[0].plot_force_measurements()
     fig_pstm_distance = ltm_list[0].plot_pstm_level_vs_distance(units=units)
     fig_pstm_frequency = ltm_list[0].plot_pstm_level_vs_frequency(units=units)
