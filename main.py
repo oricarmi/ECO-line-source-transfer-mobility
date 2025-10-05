@@ -28,6 +28,7 @@ async def analyze_data(
     impact_times: str = Form(...),
     train_length: float = Form(...),
     receiver_distances: str = Form(...),
+    receiver_offsets_csv: UploadFile | None = File(None),
     source_depth: float = Form(0.0),
     save_path: str = Form(""),
     units: str = Form("metric")
@@ -50,7 +51,50 @@ async def analyze_data(
     # Parse channel_distances and impact_times
     channel_distances_list = [float(d.strip()) for d in channel_distances.split(',')]
     impact_times_list = [float(t.strip()) for t in impact_times.split(',')]
-    receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',')]
+
+    # Receiver distances: prefer CSV if provided, else use free text
+    receiver_offsets_csv_path = None
+    if receiver_offsets_csv is not None and receiver_offsets_csv.filename:
+        receiver_offsets_csv_path = os.path.join(temp_dir, receiver_offsets_csv.filename)
+        with open(receiver_offsets_csv_path, "wb") as buffer:
+            buffer.write(await receiver_offsets_csv.read())
+        try:
+            df_offsets = pd.read_csv(receiver_offsets_csv_path)
+        except Exception as e:
+            # Clean up before returning error
+            os.remove(force_csv_path)
+            for vib_channel_csv_path in vibration_csv_paths:
+                os.remove(vib_channel_csv_path)
+            if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
+                os.remove(receiver_offsets_csv_path)
+            os.rmdir(temp_dir)
+            return templates.TemplateResponse("results.html", {"request": request, "error": f"Failed to read receiver offsets CSV: {e}"})
+
+        if "receiver_offset" not in df_offsets.columns:
+            # Clean up before returning error
+            os.remove(force_csv_path)
+            for vib_channel_csv_path in vibration_csv_paths:
+                os.remove(vib_channel_csv_path)
+            if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
+                os.remove(receiver_offsets_csv_path)
+            os.rmdir(temp_dir)
+            return templates.TemplateResponse("results.html", {"request": request, "error": "Receiver offsets CSV must have a column named 'receiver_offset'."})
+
+        try:
+            receiver_distances_list = (
+                df_offsets["receiver_offset"].dropna().astype(float).tolist()
+            )
+        except Exception as e:
+            # Clean up before returning error
+            os.remove(force_csv_path)
+            for vib_channel_csv_path in vibration_csv_paths:
+                os.remove(vib_channel_csv_path)
+            if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
+                os.remove(receiver_offsets_csv_path)
+            os.rmdir(temp_dir)
+            return templates.TemplateResponse("results.html", {"request": request, "error": f"Invalid values in 'receiver_offset' column: {e}"})
+    else:
+        receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',') if d.strip()]
 
     if len(channel_distances_list) != len(vibration_csv_paths):
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
@@ -126,6 +170,8 @@ async def analyze_data(
     os.remove(force_csv_path)
     for vib_channel_csv_path in vibration_csv_paths:
         os.remove(vib_channel_csv_path)
+    if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
+        os.remove(receiver_offsets_csv_path)
     os.rmdir(temp_dir)
 
     subtitle = f"train_length = {train_length}m, source_depth = {source_depth}m"
@@ -163,6 +209,9 @@ if __name__ == "__main__":
                 
                 <label for="receiver_distances">Receiver Distances (m):</label><br>
                 <input type="text" id="receiver_distances" name="receiver_distances"><br><br>
+
+                <label for="receiver_offsets_csv">Receiver Offsets CSV (one column named 'receiver_offset'):</label><br>
+                <input type="file" id="receiver_offsets_csv" name="receiver_offsets_csv"><br><br>
                 
                 <label for="source_depth">Source Depth (m):</label><br>
                 <input type="number" id="source_depth" name="source_depth" step="any" value="0.0"><br><br>
