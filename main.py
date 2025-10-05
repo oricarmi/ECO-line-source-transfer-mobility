@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
+import socket
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -17,7 +18,10 @@ templates = Jinja2Templates(directory="templates")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    machine_ip = socket.gethostbyname(socket.gethostname())
+    port = request.url.port
+    app_url = f"http://{machine_ip}:{port}"
+    return templates.TemplateResponse("index.html", {"request": request, "machine_ip": machine_ip, "app_url": app_url})
 
 @app.post("/analyze", response_class=HTMLResponse)
 async def analyze_data(
@@ -105,6 +109,7 @@ async def analyze_data(
     force_measurements = preprocess_data(force_df, impact_times_list)
     force_measurements = {k: np.median(np.array(v)) for k, v in force_measurements.items()}
     pstm_measurements = {}
+    pstm_measurements_iqr = {}
     channel_nums = [int(p[p.find('CH')+2]) for p in vibration_csv_paths]
     offset = min(channel_nums)
     # Process other CSVs (vibration measurements) and calculate transfer mobility
@@ -115,21 +120,26 @@ async def analyze_data(
         vibration_measurements = preprocess_data(vib_df, impact_times_list)
 
         # Perform subtraction (Vibration Level - Force Level)
-        current_distance_measurements = {}
+        current_distance_measurements_median = {}
+        current_distance_measurements_iqr = {}
         for band_center, vib_level in vibration_measurements.items():
             force_level = force_measurements.get(band_center, [])
             if not np.any(np.isnan(vib_level)) and not np.any(np.isnan(force_level)):
-                current_distance_measurements[band_center] = np.median(np.array(vib_level))
+                current_distance_measurements_median[band_center] = np.median(np.array(vib_level))
+                current_distance_measurements_iqr[band_center] = np.percentile(np.array(vib_level), 75) - np.percentile(np.array(vib_level), 25)
             else:
-                current_distance_measurements[band_center] = np.nan # Or handle as appropriate
+                current_distance_measurements_median[band_center] = np.nan # Or handle as appropriate
+                current_distance_measurements_iqr[band_center] = np.nan # Or handle as appropriate
         
-        pstm_measurements[channel_distances_list[ind]] = current_distance_measurements
+        pstm_measurements[channel_distances_list[ind]] = current_distance_measurements_median
+        pstm_measurements_iqr[channel_distances_list[ind]] = current_distance_measurements_iqr
     ltm_list = []
     for rd in receiver_distances_list:
         # Initialize LineTransferMobility
         ltm = LineTransferMobility(
             force_measurements=force_measurements,
             velocity_measurements=pstm_measurements,
+            velocity_measurements_iqr=pstm_measurements_iqr,
             train_length=train_length,
             receiver_offset=rd,
             source_depth=source_depth
@@ -178,48 +188,4 @@ async def analyze_data(
     return templates.TemplateResponse("results.html", {"request": request, "plots": plots, "subtitle": subtitle})
 
 if __name__ == "__main__":
-    if not os.path.exists("templates"):
-        os.makedirs("templates")
-    
-    # Create a basic index.html for now
-    with open("templates/index.html", "w") as f:
-        f.write("""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Vibration Impact Analysis</title>
-        </head>
-        <body>
-            <h1>Upload Data for Vibration Impact Analysis</h1>
-            <form action="/analyze" method="post" enctype="multipart/form-data">
-                <label for="force_csv">Reference CSV:</label><br>
-                <input type="file" id="force_csv" name="force_csv"><br><br>
-                
-                <label for="other_csvs">Other CSV Files (can upload multiple):</label><br>
-                <input type="file" id="other_csvs" name="other_csvs" multiple><br><br>
-                
-                <label for="channel_distances">Channel Distances (comma-separated):</label><br>
-                <input type="text" id="channel_distances" name="channel_distances"><br><br>
-                
-                <label for="impact_times">Impact Times (comma-separated):</label><br>
-                <input type="text" id="impact_times" name="impact_times"><br><br>
-                
-                <label for="train_length">Train Length (m):</label><br>
-                <input type="number" id="train_length" name="train_length" step="any"><br><br>
-                
-                <label for="receiver_distances">Receiver Distances (m):</label><br>
-                <input type="text" id="receiver_distances" name="receiver_distances"><br><br>
-
-                <label for="receiver_offsets_csv">Receiver Offsets CSV (one column named 'receiver_offset'):</label><br>
-                <input type="file" id="receiver_offsets_csv" name="receiver_offsets_csv"><br><br>
-                
-                <label for="source_depth">Source Depth (m):</label><br>
-                <input type="number" id="source_depth" name="source_depth" step="any" value="0.0"><br><br>
-                
-                <input type="submit" value="Analyze">
-            </form>
-        </body>
-        </html>
-        """)
-
     uvicorn.run(app, host="0.0.0.0", port=8000)

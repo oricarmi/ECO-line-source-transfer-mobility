@@ -5,11 +5,11 @@ F_Ref = 1
 REGRESSION_LOG_MULTIPLIER = 10
 y_axis_titles_pstm = {
     "imperial": "dB rel microin/s/ lbf",
-    "metric": "dB rel (5*10^-8 m/sec) / N"
+    "metric": "dB rel (5e-8 m/sec) / N"
 }
 y_axis_titles_lstm = {
     "imperial": "dB rel (microin/s) / (lbf/sqrt(in))",
-    "metric": "dB rel (5*10^-8 m/sec) / (N/sqrt(m))"
+    "metric": "dB rel (5e-8 m/sec) / (N/sqrt(m))"
 }
 
 metric_to_empirial_pstm = 18.887 # dB (add this to the metric to get to imperial)

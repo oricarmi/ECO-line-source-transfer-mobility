@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from conf import V_Ref, F_Ref, y_axis_titles_pstm, y_axis_titles_lstm, metric_to_empirial_pstm, metric_to_empirial_lstm, REGRESSION_LOG_MULTIPLIER
 
 class LineTransferMobility:
-    def __init__(self, velocity_measurements, force_measurements, train_length, receiver_offset, source_depth=0.0):
+    def __init__(self, velocity_measurements, force_measurements, train_length, receiver_offset, velocity_measurements_iqr=None, source_depth=0.0):
         """
         velocity measurements: dict {distance (m): {band_center (Hz): level (m/s)}}
         force_measurements: dict {band center (Hz): level (N)}
@@ -14,6 +14,9 @@ class LineTransferMobility:
         """
         self.force_measurements = force_measurements
         self.measurements = velocity_measurements
+        self.measurements_iqr = velocity_measurements_iqr
+        if self.measurements_iqr is None:
+            self.measurements_iqr = {d: {fc: 0 for fc in self.band_centers} for d in self.distances}
         self.distances = sorted(velocity_measurements.keys())
         # collect all band centers from the first entry
         self.band_centers = sorted(list(next(iter(velocity_measurements.values())).keys()))
@@ -49,13 +52,13 @@ class LineTransferMobility:
         return self.point_regressions
 
     # --- Integration over train length ---
-    def integrate_pstm_to_lstm(self, predict_level_db_fn, F, num_segments=801):
+    def integrate_pstm_to_lstm(self, predict_level_db_fn, F, num_segments=701):
         xs = np.linspace(-self.train_length/2, self.train_length/2, num_segments)
         slant = np.sqrt(self.receiver_offset**2 + xs**2 + self.source_depth**2)        
         point_db = predict_level_db_fn(slant)
         yp_linear = 10 ** (point_db / REGRESSION_LOG_MULTIPLIER)
         # amplitude sum (according to FTA e.q B4 Appendix B)
-        y_line = np.sum(yp_linear) / np.sqrt(self.train_length) / F # (m / s) / (N / sqrt(m))
+        y_line = np.trapezoid(yp_linear, xs) / np.sqrt(self.train_length) / F # (m / s) / (N / sqrt(m))
         y_ref = V_Ref / F_Ref
         line_db = 10 * np.log10(y_line / y_ref)
         return line_db
@@ -105,30 +108,33 @@ class LineTransferMobility:
         fig.update_layout(
             title="Point-source regressions",
             xaxis_title="Log Distance (m)",
-            yaxis_title="Level (dB rel (5*10^-8 m/sec) / N)",
+            yaxis_title="Level (dB rel (5e-8 m/sec) / N)",
             xaxis=dict(type="log")
         )
         return fig
     
     def plot_force_measurements(self):
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=self.band_centers, y=list(10*np.log10(np.array(list(self.force_measurements.values())) / F_Ref)), mode="markers+lines"))
+        fig.add_trace(go.Scatter(x=self.band_centers, y=list(10*np.log10(np.array(list(self.force_measurements.values())) / F_Ref / np.sqrt(self.train_length))), mode="markers+lines"))
         fig.update_layout(
             title="Force Measurements",
             xaxis_title="Frequency (Hz)",
-            yaxis_title="Level (dB rel 1N)",
+            yaxis_title="Level (dB rel 1N / sqrt(m))",
             xaxis=dict(type="log"))
         return fig
 
     def plot_pstm_level_vs_distance(self, units="metric"):
         fig = go.Figure()
+        sqrt_N = np.sqrt(len(self.distances))
         for band_center in self.band_centers:
             levels = np.array([10 * np.log10(self.measurements[d][band_center] / V_Ref / self.force_measurements[band_center]) for d in self.distances])
+            errors = np.array([8.686 * self.measurements_iqr[d][band_center] / sqrt_N / V_Ref / self.force_measurements[band_center] for d in self.distances])
+            errors /= levels
             if units == "imperial":
                 levels += metric_to_empirial_pstm
-            fig.add_trace(go.Scatter(x=self.distances, y=list(levels), mode='markers+lines', name=f"{band_center:.1f} Hz"))
+            fig.add_trace(go.Scatter(x=self.distances, y=list(levels), error_y=dict(type='data', array=list(errors), visible=True), mode='markers+lines', name=f"{band_center:.1f} Hz"))
         fig.update_layout(
-            title="Point Source Transfer Mobility - Velocity Measurements vs Distance",
+            title="Point Source Transfer Mobility - Velocity Measurements vs Log Distance",
             xaxis_title="Distance (m)",
             yaxis_title=y_axis_titles_pstm[units],
             xaxis=dict(type="log")
@@ -137,11 +143,14 @@ class LineTransferMobility:
     
     def plot_pstm_level_vs_frequency(self, units="metric"):
         fig = go.Figure()
+        sqrt_N = np.sqrt(len(self.band_centers))
         for d in self.distances:
-            levels = np.array([20 * np.log10(self.measurements[d][band_center] / V_Ref / self.force_measurements[band_center]) for band_center in self.band_centers])
+            levels = np.array([10 * np.log10(self.measurements[d][band_center] / V_Ref / self.force_measurements[band_center]) for band_center in self.band_centers])
+            errors = np.array([8.686 * self.measurements_iqr[d][band_center] / sqrt_N / V_Ref / self.force_measurements[band_center] for band_center in self.band_centers])
+            errors /= levels
             if units == "imperial":
                 levels += metric_to_empirial_pstm
-            fig.add_trace(go.Scatter(x=self.band_centers, y=list(levels), mode='markers+lines', name=f"{d} m"))
+            fig.add_trace(go.Scatter(x=self.band_centers, y=list(levels), error_y=dict(type='data', array=list(errors), visible=True), mode='markers+lines', name=f"{d} m"))
         fig.update_layout(
             title="Point Source Transfer Mobility - Velocity Measurements vs Frequency",
             xaxis_title="Frequency (Hz)",

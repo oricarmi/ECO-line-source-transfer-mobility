@@ -7,6 +7,7 @@
         </head>
         <body>
             <h1>Upload Data for Vibration Impact Analysis</h1>
+            <h2>Access URL: {{ app_url }}</h2>
             <form action="/analyze" method="post" enctype="multipart/form-data">
                 <label for="force_csv">Force CSV:</label><br>
                 <input type="file" id="force_csv" name="force_csv"><br><br>
