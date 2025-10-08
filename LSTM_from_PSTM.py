@@ -2,6 +2,40 @@ import numpy as np
 from scipy.interpolate import interp1d
 import plotly.graph_objects as go
 from conf import V_Ref, F_Ref, y_axis_titles_pstm, y_axis_titles_lstm, metric_to_empirial_pstm, metric_to_empirial_lstm, REGRESSION_LOG_MULTIPLIER
+def enforce_physical_decay(vibration_data):
+    # 1. Get and numerically sort the distances (ascending)
+    sorted_distances = sorted(vibration_data.keys())
+    
+    if not sorted_distances:
+        return vibration_data # Handle empty case
+        
+    # 2. Get all frequency keys
+    frequencies = list(vibration_data[sorted_distances[0]].keys())
+    
+    # Initialize the new, sorted dictionary
+    sorted_data = {}
+    
+    # Initialize the inner dictionaries in the output structure
+    for dist in sorted_distances:
+        sorted_data[dist] = {}
+        # 3. Iterate over each frequency band
+    for freq in frequencies:
+        
+        # a. Extract all measured levels for this frequency
+        current_levels = []
+        for dist in sorted_distances:
+            current_levels.append(vibration_data[dist][freq])
+            
+        # b. Sort the extracted levels in DESCENDING order (highest to lowest)
+        # This determines the order of assignment.
+        sorted_levels = sorted(current_levels, reverse=True)
+        
+        # c. Re-map: Assign the sorted levels to the sorted distances
+        #    The highest level (index 0) goes to the shortest distance (index 0), etc.
+        for i, dist in enumerate(sorted_distances):
+            sorted_data[dist][freq] = sorted_levels[i]
+            
+    return sorted_data
 
 class LineTransferMobility:
     def __init__(self, velocity_measurements, force_measurements, train_length, receiver_offset, velocity_measurements_iqr=None, source_depth=0.0):
@@ -13,7 +47,7 @@ class LineTransferMobility:
         source_depth: float, optional, vertical source depth (m)
         """
         self.force_measurements = force_measurements
-        self.measurements = velocity_measurements
+        self.measurements = velocity_measurements#enforce_physical_decay(velocity_measurements)
         self.measurements_iqr = velocity_measurements_iqr
         if self.measurements_iqr is None:
             self.measurements_iqr = {d: {fc: 0 for fc in self.band_centers} for d in self.distances}
@@ -58,10 +92,11 @@ class LineTransferMobility:
         point_db = predict_level_db_fn(slant)
         yp_linear = 10 ** (point_db / REGRESSION_LOG_MULTIPLIER)
         # amplitude sum (according to FTA e.q B4 Appendix B)
-        y_line = np.trapezoid(yp_linear, xs) / np.sqrt(self.train_length) / F # (m / s) / (N / sqrt(m))
+        y_line = np.trapezoid(yp_linear, xs) # integral - (m / s) * m
+        y_line /= F * np.sqrt(self.train_length) # (m / s) * sqrt(m) / N = (m / s) / (N / sqrt(m))
         y_ref = V_Ref / F_Ref
-        line_db = 10 * np.log10(y_line / y_ref)
-        return line_db
+        lstm_db = 10 * np.log10(y_line / y_ref)
+        return lstm_db
 
     def compute_freq_lstm(self, band_center):
         """Compute line response for a single band."""
@@ -101,21 +136,21 @@ class LineTransferMobility:
         fig = go.Figure()
         for fc, reg in self.point_regressions.items():
             ds = np.linspace(1.0, max(self.distances)+10)
-            vals = 10*np.log10(10**(reg["predict"](ds) / REGRESSION_LOG_MULTIPLIER) / self.force_measurements[fc] / V_Ref)
+            vals = 10 * np.log10(10**(reg["predict"](ds) / REGRESSION_LOG_MULTIPLIER) / self.force_measurements[fc] / V_Ref)
             if units == "imperial":
                 vals += metric_to_empirial_pstm
             fig.add_trace(go.Scatter(x=ds, y=list(vals), mode='lines', name=f"{fc:.1f} Hz"))
         fig.update_layout(
             title="Point-source regressions",
             xaxis_title="Log Distance (m)",
-            yaxis_title="Level (dB rel (5e-8 m/sec) / N)",
+            yaxis_title=y_axis_titles_pstm[units],
             xaxis=dict(type="log")
         )
         return fig
     
     def plot_force_measurements(self):
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=self.band_centers, y=list(10*np.log10(np.array(list(self.force_measurements.values())) / F_Ref / np.sqrt(self.train_length))), mode="markers+lines"))
+        fig.add_trace(go.Scatter(x=self.band_centers, y=list(20 * np.log10(np.array(list(self.force_measurements.values())) / F_Ref / np.sqrt(self.train_length))), mode="markers+lines"))
         fig.update_layout(
             title="Force Measurements",
             xaxis_title="Frequency (Hz)",
