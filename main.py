@@ -211,9 +211,9 @@ async def analyze_data(
             })
             line_responses_df.to_csv(os.path.join(save_path, f"{project_name}_lstm_receiver_{ltm_instance.receiver_offset}m.csv"), index=False)
 
-    plots["point_regressions"] = fig_pr.to_html(full_html=False, include_plotlyjs=False)
     plots["force_measurements"] = fig_fm.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_distance"] = fig_pstm_distance.to_html(full_html=False, include_plotlyjs=False)
+    plots["point_regressions"] = fig_pr.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_frequency"] = fig_pstm_frequency.to_html(full_html=False, include_plotlyjs=False)
     plots["all_line_responses"] = fig_lstms.to_html(full_html=False, include_plotlyjs=False)
     # Clean up temporary files
