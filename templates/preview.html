@@ -26,7 +26,7 @@
         <!-- Hidden fields to pass session data -->
         <input type="hidden" name="force_csv_path" value="{{ session_data.force_csv_path }}">
         <input type="hidden" name="vibration_csv_paths" value="{{ session_data.vibration_csv_paths | join(',') }}">
-        <input type="hidden" name="receiver_offsets_csv_path" value="{{ session_data.receiver_offsets_csv_path or '' }}">
+        <input type="hidden" name="receivers_data_excel_path" value="{{ session_data.receivers_data_excel_path or '' }}">
         <input type="hidden" name="channel_distances_list" value="{{ session_data.channel_distances_list | join(',') }}">
         <input type="hidden" name="impact_times_list" value="{{ session_data.impact_times_list | join(',') }}">
         <input type="hidden" name="receiver_distances_list" value="{{ session_data.receiver_distances_list | join(',') }}">
@@ -34,6 +34,9 @@
         <input type="hidden" name="source_depth" value="{{ session_data.source_depth }}">
         <input type="hidden" name="save_path" value="{{ session_data.save_path }}">
         <input type="hidden" name="units" value="{{ session_data.units }}">
+        <input type="hidden" name="fds_csv_path" value="{{ session_data.fds_csv_path or '' }}">
+        <input type="hidden" name="floor_resonance_frequencies" value="{{ session_data.floor_resonance_frequencies or '' }}">
+        <input type="hidden" name="db_amount" value="{{ session_data.db_amount or '' }}">
         
         <input type="submit" value="Proceed with Analysis">
     </form>

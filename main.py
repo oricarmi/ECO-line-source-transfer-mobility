@@ -8,7 +8,7 @@ import socket
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from utils import preprocess_data, read_csv_with_metadata, plot_all_line_responses, plot_log_scale_measurements
+from utils import preprocess_data, read_csv_with_metadata, plot_all_line_responses, plot_log_scale_measurements, read_fds_csv, read_receiver_excel, interpolate_lstm_for_receivers, create_receiver_lstm_tables, create_preview_plot
 from LSTM_from_PSTM import LineTransferMobility
 from conf import THIRD_OCTAVE_BANDS
 
@@ -33,18 +33,23 @@ async def analyze_data(
     impact_times: str = Form(None),
     train_length: float = Form(None),
     receiver_distances: str = Form(None),
-    receiver_offsets_csv: UploadFile | None = File(None),
+    receivers_data_excel: UploadFile | None = File(None),
     source_depth: float = Form(0.0),
     save_path: str = Form(""),
     units: str = Form("metric"),
+    # New parameters for FDS and Excel files
+    fds_csv: UploadFile | None = File(None),
+    floor_resonance_frequencies: str = Form(""),
+    db_amount: str = Form(""),
     # New parameters for preview flow
     force_csv_path: str = Form(None),
     vibration_csv_paths: str = Form(None),
-    receiver_offsets_csv_path: str = Form(None),
+    receivers_data_excel_path: str = Form(None),
     channel_distances_list: str = Form(None),
     impact_times_list: str = Form(None),
     receiver_distances_list: str = Form(None),
-    impacts_to_remove: str = Form("")
+    impacts_to_remove: str = Form(""),
+    fds_csv_path: str = Form(None)
 ):
     # Initialize temp_dir for cleanup
     temp_dir = "temp_uploads"
@@ -57,6 +62,12 @@ async def analyze_data(
         channel_distances_list = [float(d.strip()) for d in channel_distances_list.split(',')] if channel_distances_list else []
         impact_times_list = [float(t.strip()) for t in impact_times_list.split(',')] if impact_times_list else []
         receiver_distances_list = [float(d.strip()) for d in receiver_distances_list.split(',')] if receiver_distances_list else []
+        
+        # Set FDS CSV path from preview flow
+        fds_csv_path = fds_csv_path if fds_csv_path else None
+        
+        # Set Excel path from preview flow
+        receivers_data_excel_path = receivers_data_excel_path if receivers_data_excel_path else None
         
         # Process impacts to remove
         if impacts_to_remove.strip():
@@ -82,53 +93,17 @@ async def analyze_data(
                 buffer.write(await csv_file.read())
             vibration_csv_paths.append(file_path)
 
+        # Save FDS CSV file if provided
+        fds_csv_path = None
+        if fds_csv is not None and fds_csv.filename:
+            fds_csv_path = os.path.join(temp_dir, fds_csv.filename)
+            with open(fds_csv_path, "wb") as buffer:
+                buffer.write(await fds_csv.read())
+
         # Parse channel_distances and impact_times
         channel_distances_list = [float(d.strip()) for d in channel_distances.split(',')]
         impact_times_list = [float(t.strip()) for t in impact_times.split(',')]
-
-        # Receiver distances: prefer CSV if provided, else use free text
-        receiver_offsets_csv_path = None
-        if receiver_offsets_csv is not None and receiver_offsets_csv.filename:
-            receiver_offsets_csv_path = os.path.join(temp_dir, receiver_offsets_csv.filename)
-            with open(receiver_offsets_csv_path, "wb") as buffer:
-                buffer.write(await receiver_offsets_csv.read())
-            try:
-                df_offsets = pd.read_csv(receiver_offsets_csv_path)
-            except Exception as e:
-                # Clean up before returning error
-                os.remove(force_csv_path)
-                for vib_channel_csv_path in vibration_csv_paths:
-                    os.remove(vib_channel_csv_path)
-                if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-                    os.remove(receiver_offsets_csv_path)
-                os.rmdir(temp_dir)
-                return templates.TemplateResponse("results.html", {"request": request, "error": f"Failed to read receiver offsets CSV: {e}"})
-
-            if "receiver_offset" not in df_offsets.columns:
-                # Clean up before returning error
-                os.remove(force_csv_path)
-                for vib_channel_csv_path in vibration_csv_paths:
-                    os.remove(vib_channel_csv_path)
-                if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-                    os.remove(receiver_offsets_csv_path)
-                os.rmdir(temp_dir)
-                return templates.TemplateResponse("results.html", {"request": request, "error": "Receiver offsets CSV must have a column named 'receiver_offset'."})
-
-            try:
-                receiver_distances_list = (
-                    df_offsets["receiver_offset"].dropna().astype(float).tolist()
-                )
-            except Exception as e:
-                # Clean up before returning error
-                os.remove(force_csv_path)
-                for vib_channel_csv_path in vibration_csv_paths:
-                    os.remove(vib_channel_csv_path)
-                if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-                    os.remove(receiver_offsets_csv_path)
-                os.rmdir(temp_dir)
-                return templates.TemplateResponse("results.html", {"request": request, "error": f"Invalid values in 'receiver_offset' column: {e}"})
-        else:
-            receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',') if d.strip()]
+        receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',') if d.strip()]
 
     if len(channel_distances_list) != len(vibration_csv_paths):
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
@@ -236,6 +211,33 @@ async def analyze_data(
             })
             line_responses_df.to_csv(os.path.join(save_path, f"{project_name}_lstm_receiver_{ltm_instance.receiver_offset}m.csv"), index=False)
 
+    # Process FDS CSV and Excel files if provided
+    receiver_tables = {}
+    fds_data = None
+    
+    if fds_csv_path and os.path.exists(fds_csv_path):
+        try:
+            fds_data = read_fds_csv(fds_csv_path)
+            print(f"FDS data loaded: {len(fds_data)} frequency bands")
+        except Exception as e:
+            print(f"Error reading FDS CSV: {e}")
+    
+    if receivers_data_excel_path and os.path.exists(receivers_data_excel_path):
+        try:
+            # Read receiver information from Excel file
+            receivers = read_receiver_excel(receivers_data_excel_path)
+            print(f"Found {len(receivers)} receivers")
+            
+            # Interpolate LSTM values for each receiver
+            interpolated_receivers = interpolate_lstm_for_receivers(receivers, ltm_list, units)
+            
+            # Create HTML tables for each receiver
+            receiver_tables = create_receiver_lstm_tables(interpolated_receivers, units)
+            print(f"Created {len(receiver_tables)} receiver tables")
+            
+        except Exception as e:
+            print(f"Error processing receiver Excel file: {e}")
+
     plots["log_scale_measurements"] = fig_log_scale.to_html(full_html=False, include_plotlyjs=False)
     plots["force_measurements"] = fig_fm.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_distance"] = fig_pstm_distance.to_html(full_html=False, include_plotlyjs=False)
@@ -244,20 +246,34 @@ async def analyze_data(
     plots["all_line_responses"] = fig_lstms.to_html(full_html=False, include_plotlyjs=False)
     
     # Clean up temporary files
-    # if os.path.exists(force_csv_path):
-    #     os.remove(force_csv_path)
-    # for vib_channel_csv_path in vibration_csv_paths:
-    #     if os.path.exists(vib_channel_csv_path):
-    #         os.remove(vib_channel_csv_path)
-    # if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-    #     os.remove(receiver_offsets_csv_path)
-    # if os.path.exists(temp_dir):
-    #     os.rmdir(temp_dir)
+    if os.path.exists(force_csv_path):
+        os.remove(force_csv_path)
+    for vib_channel_csv_path in vibration_csv_paths:
+        if os.path.exists(vib_channel_csv_path):
+            os.remove(vib_channel_csv_path)
+    if receivers_data_excel_path and os.path.exists(receivers_data_excel_path):
+        os.remove(receivers_data_excel_path)
+    if fds_csv_path and os.path.exists(fds_csv_path):
+        os.remove(fds_csv_path)
+    if os.path.exists(temp_dir):
+        try:
+            os.rmdir(temp_dir)
+        except OSError:
+            # Directory not empty, ignore
+            pass
 
     title = f"Vibration Impact Analysis Results for {project_name}"
     subtitle = f"train_length = {train_length}m, source_depth = {source_depth}m."
     subtitle2 = f"Impact times: {impact_times_list}"
-    return templates.TemplateResponse("results.html", {"request": request, "plots": plots, "title": title, "subtitle": subtitle, "subtitle2": subtitle2})
+    return templates.TemplateResponse("results.html", {
+        "request": request, 
+        "plots": plots, 
+        "title": title, 
+        "subtitle": subtitle, 
+        "subtitle2": subtitle2,
+        "receiver_tables": receiver_tables,
+        "fds_data": fds_data
+    })
 
 @app.post("/preview", response_class=HTMLResponse)
 async def preview_data(
@@ -268,10 +284,14 @@ async def preview_data(
     impact_times: str = Form(...),
     train_length: float = Form(...),
     receiver_distances: str = Form(...),
-    receiver_offsets_csv: UploadFile | None = File(None),
+    receivers_data_excel: UploadFile | None = File(None),
     source_depth: float = Form(0.0),
     save_path: str = Form(""),
-    units: str = Form("metric")
+    units: str = Form("metric"),
+    # New parameters for FDS and Excel files
+    fds_csv: UploadFile | None = File(None),
+    floor_resonance_frequencies: str = Form(""),
+    db_amount: str = Form("")
 ):
     # Save uploaded files temporarily
     temp_dir = "temp_uploads"
@@ -288,53 +308,24 @@ async def preview_data(
             buffer.write(await csv_file.read())
         vibration_csv_paths.append(file_path)
 
+    # Save FDS CSV file if provided
+    fds_csv_path = None
+    if fds_csv is not None and fds_csv.filename:
+        fds_csv_path = os.path.join(temp_dir, fds_csv.filename)
+        with open(fds_csv_path, "wb") as buffer:
+            buffer.write(await fds_csv.read())
+
+    # Save Excel file if provided
+    receivers_data_excel_path = None
+    if receivers_data_excel is not None and receivers_data_excel.filename:
+        receivers_data_excel_path = os.path.join(temp_dir, receivers_data_excel.filename)
+        with open(receivers_data_excel_path, "wb") as buffer:
+            buffer.write(await receivers_data_excel.read())
+
     # Parse inputs
     channel_distances_list = [float(d.strip()) for d in channel_distances.split(',')]
     impact_times_list = sorted([float(t.strip()) for t in impact_times.split(',')])
-
-    # Receiver distances: prefer CSV if provided, else use free text
-    receiver_offsets_csv_path = None
-    if receiver_offsets_csv is not None and receiver_offsets_csv.filename:
-        receiver_offsets_csv_path = os.path.join(temp_dir, receiver_offsets_csv.filename)
-        with open(receiver_offsets_csv_path, "wb") as buffer:
-            buffer.write(await receiver_offsets_csv.read())
-        try:
-            df_offsets = pd.read_csv(receiver_offsets_csv_path)
-        except Exception as e:
-            # Clean up before returning error
-            os.remove(force_csv_path)
-            for vib_channel_csv_path in vibration_csv_paths:
-                os.remove(vib_channel_csv_path)
-            if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-                os.remove(receiver_offsets_csv_path)
-            os.rmdir(temp_dir)
-            return templates.TemplateResponse("results.html", {"request": request, "error": f"Failed to read receiver offsets CSV: {e}"})
-
-        if "receiver_offset" not in df_offsets.columns:
-            # Clean up before returning error
-            os.remove(force_csv_path)
-            for vib_channel_csv_path in vibration_csv_paths:
-                os.remove(vib_channel_csv_path)
-            if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-                os.remove(receiver_offsets_csv_path)
-            os.rmdir(temp_dir)
-            return templates.TemplateResponse("results.html", {"request": request, "error": "Receiver offsets CSV must have a column named 'receiver_offset'."})
-
-        try:
-            receiver_distances_list = (
-                df_offsets["receiver_offset"].dropna().astype(float).tolist()
-            )
-        except Exception as e:
-            # Clean up before returning error
-            os.remove(force_csv_path)
-            for vib_channel_csv_path in vibration_csv_paths:
-                os.remove(vib_channel_csv_path)
-            if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-                os.remove(receiver_offsets_csv_path)
-            os.rmdir(temp_dir)
-            return templates.TemplateResponse("results.html", {"request": request, "error": f"Invalid values in 'receiver_offset' column: {e}"})
-    else:
-        receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',') if d.strip()]
+    receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',') if d.strip()]
 
     if len(channel_distances_list) != len(vibration_csv_paths):
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
@@ -343,92 +334,24 @@ async def preview_data(
     force_df = read_csv_with_metadata(force_csv_path)
     force_df.name = "force_df"
     
-    # Initialize plots dictionary
-    plots = {}
-    
-    # Create combined plot with dual y-axes
-    fig_combined = go.Figure()
-    
-    # Add force data (right y-axis) - SUM_LIN only
-    if "SUM(LIN)" in force_df.columns:
-        force_df["SUM(LIN)"] = pd.to_numeric(force_df["SUM(LIN)"], errors='coerce')
-        fig_combined.add_trace(go.Scatter(
-            x=force_df["Time"], 
-            y=list(force_df["SUM(LIN)"]), 
-            mode='lines', 
-            name="Force SUM(LIN)",
-            yaxis='y2',
-            line=dict(color='blue')
-        ))
-    
-    # Add vibration data (left y-axis) - SUM_LIN only
-    colormap = ["red", "green", "orange", "purple", "brown", "pink", "gray", "yellow", "cyan", "magenta"]
-    for i, vib_channel_csv_path in enumerate(vibration_csv_paths):
-        vib_df = read_csv_with_metadata(vib_channel_csv_path)
-        
-        # Extract channel number from filename
-        ch_start = vib_channel_csv_path.find('CH')
-        if ch_start != -1:
-            # Find the number after CH
-            ch_num = ""
-            for j in range(ch_start + 2, len(vib_channel_csv_path)):
-                if vib_channel_csv_path[j].isdigit():
-                    ch_num += vib_channel_csv_path[j]
-                else:
-                    break
-            channel_name = f"CH{ch_num}" if ch_num else f"CH{i+1}"
-        else:
-            channel_name = f"CH{i+1}"
-        
-        if "SUM(LIN)" in vib_df.columns:
-            vib_df["SUM(LIN)"] = pd.to_numeric(vib_df["SUM(LIN)"], errors='coerce')
-            fig_combined.add_trace(go.Scatter(
-                x=vib_df["Time"], 
-                y=list(vib_df["SUM(LIN)"]), 
-                mode='lines', 
-                name=f"Vib {channel_name} SUM(LIN) ({channel_distances_list[i]}m)",
-                yaxis='y',
-                line=dict(color=colormap[i])
-            ))
-    
-    # Add impact time lines
-    for i, impact_time in enumerate(impact_times_list):
-        fig_combined.add_vline(x=impact_time, line_dash="dash", line_color="black", 
-                              annotation_text=f"Impact {i+1}", annotation_position="top")
-    
-    fig_combined.update_layout(
-        title="Force and Vibration Measurements with Impact Times",
-        xaxis_title="Time (s)",
-        yaxis=dict(
-            title="Vibration Level (m/s)",
-            side="left",
-            title_font=dict(color="red"),
-            tickfont=dict(color="red")
-        ),
-        yaxis2=dict(
-            title="Force Level (N)",
-            side="right",
-            overlaying="y",
-            title_font=dict(color="blue"),
-            tickfont=dict(color="blue")
-        ),
-        height=600
-    )
-    
-    plots["combined_preview"] = fig_combined.to_html(full_html=False, include_plotlyjs=False)
+    # Create preview plot using utils function
+    plots = create_preview_plot(force_df, vibration_csv_paths, channel_distances_list, impact_times_list)
     
     # Store data for next step
     session_data = {
         "force_csv_path": force_csv_path,
         "vibration_csv_paths": vibration_csv_paths,
-        "receiver_offsets_csv_path": receiver_offsets_csv_path,
+        "receivers_data_excel_path": receivers_data_excel_path,
         "channel_distances_list": channel_distances_list,
         "impact_times_list": impact_times_list,
         "receiver_distances_list": receiver_distances_list,
         "train_length": train_length,
         "source_depth": source_depth,
         "save_path": save_path,
-        "units": units
+        "units": units,
+        "fds_csv_path": fds_csv_path,
+        "floor_resonance_frequencies": floor_resonance_frequencies,
+        "db_amount": db_amount
     }
     
     return templates.TemplateResponse("preview.html", {

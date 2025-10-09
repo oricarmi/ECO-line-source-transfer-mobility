@@ -21,6 +21,22 @@
             </div>
         {% endfor %}
         </div>
+        
+        {% if receiver_tables %}
+        <h2>Receiver LSTM Results</h2>
+        <div class="receiver-tables-container">
+        {% for receiver_name, table_html in receiver_tables.items() %}
+            {{ table_html | safe }}
+        {% endfor %}
+        </div>
+        {% endif %}
+        
+        {% if fds_data %}
+        <h2>FDS Data</h2>
+        <div class="fds-data">
+            <p>Force Density Spectrum loaded with {{ fds_data|length }} frequency bands</p>
+        </div>
+        {% endif %}
     {% else %}
         <p>No results to display.</p>
     {% endif %}
