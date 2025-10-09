@@ -3,6 +3,10 @@ IMPACT_SEARCH_RANGE = 8 # seconds
 V_Ref = 5e-8 # 50 nanometer
 F_Ref = 1
 REGRESSION_LOG_MULTIPLIER = 20
+y_axis_titles_vib = {
+    "imperial": "dB rel μin/s",
+    "metric": "dB rel (5e-8 m/sec)"
+}
 y_axis_titles_pstm = {
     "imperial": "dB rel μin/s/ lbf",
     "metric": "dB rel (5e-8 m/sec) / N"

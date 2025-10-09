@@ -8,7 +8,7 @@ import socket
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from utils import preprocess_data, read_csv_with_metadata, plot_all_line_responses
+from utils import preprocess_data, read_csv_with_metadata, plot_all_line_responses, plot_log_scale_measurements
 from LSTM_from_PSTM import LineTransferMobility
 from conf import THIRD_OCTAVE_BANDS
 
@@ -195,6 +195,30 @@ async def analyze_data(
     fig_pstm_distance = ltm_list[0].plot_pstm_level_vs_distance(units=units)
     fig_pstm_frequency = ltm_list[0].plot_pstm_level_vs_frequency(units=units)
     fig_lstms = plot_all_line_responses(ltm_list, units=units)
+    
+    # Generate log-scale plot with selected impacts only
+    # Re-read the original data files for plotting
+    try:
+        force_df_original = read_csv_with_metadata(force_csv_path)
+        vibration_dfs_original = []
+        for vib_channel_csv_path in vibration_csv_paths:
+            vib_df_original = read_csv_with_metadata(vib_channel_csv_path)
+            vibration_dfs_original.append(vib_df_original)
+        
+        fig_log_scale = plot_log_scale_measurements(
+            force_df_original, 
+            vibration_dfs_original, 
+            impact_times_list, 
+            channel_distances_list, 
+            units=units
+        )
+    except Exception as e:
+        print(f"Error generating log scale plot: {e}")
+        # Create a simple error plot
+        fig_log_scale = go.Figure()
+        fig_log_scale.add_annotation(text=f"Error generating log scale plot: {str(e)}", 
+                                   xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig_log_scale.update_layout(title="Log Scale Plot - Error")
     project_name = os.path.basename(force_csv_path)[:os.path.basename(force_csv_path).find('1_3')-1]
     if save_path:
         fig_pr.write_image(os.path.join(save_path, f"{project_name}_point_regressions.png"))
@@ -202,6 +226,7 @@ async def analyze_data(
         fig_pstm_distance.write_image(os.path.join(save_path, f"{project_name}_pstm_vs_dist.png"))
         fig_pstm_frequency.write_image(os.path.join(save_path, f"{project_name}_pstm_vs_freq.png"))
         fig_lstms.write_image(os.path.join(save_path, f"{project_name}_lstms.png"))
+        fig_log_scale.write_image(os.path.join(save_path, f"{project_name}_log_scale_measurements.png"))
         for ltm_instance in ltm_list:
             os.makedirs(save_path, exist_ok=True)
             # Save line responses to CSV
@@ -211,21 +236,23 @@ async def analyze_data(
             })
             line_responses_df.to_csv(os.path.join(save_path, f"{project_name}_lstm_receiver_{ltm_instance.receiver_offset}m.csv"), index=False)
 
+    plots["log_scale_measurements"] = fig_log_scale.to_html(full_html=False, include_plotlyjs=False)
     plots["force_measurements"] = fig_fm.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_distance"] = fig_pstm_distance.to_html(full_html=False, include_plotlyjs=False)
     plots["point_regressions"] = fig_pr.to_html(full_html=False, include_plotlyjs=False)
     plots["measurements_level_vs_frequency"] = fig_pstm_frequency.to_html(full_html=False, include_plotlyjs=False)
     plots["all_line_responses"] = fig_lstms.to_html(full_html=False, include_plotlyjs=False)
+    
     # Clean up temporary files
-    if os.path.exists(force_csv_path):
-        os.remove(force_csv_path)
-    for vib_channel_csv_path in vibration_csv_paths:
-        if os.path.exists(vib_channel_csv_path):
-            os.remove(vib_channel_csv_path)
-    if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
-        os.remove(receiver_offsets_csv_path)
-    if os.path.exists(temp_dir):
-        os.rmdir(temp_dir)
+    # if os.path.exists(force_csv_path):
+    #     os.remove(force_csv_path)
+    # for vib_channel_csv_path in vibration_csv_paths:
+    #     if os.path.exists(vib_channel_csv_path):
+    #         os.remove(vib_channel_csv_path)
+    # if receiver_offsets_csv_path and os.path.exists(receiver_offsets_csv_path):
+    #     os.remove(receiver_offsets_csv_path)
+    # if os.path.exists(temp_dir):
+    #     os.rmdir(temp_dir)
 
     title = f"Vibration Impact Analysis Results for {project_name}"
     subtitle = f"train_length = {train_length}m, source_depth = {source_depth}m."

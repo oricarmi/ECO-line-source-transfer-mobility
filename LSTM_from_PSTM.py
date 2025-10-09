@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from scipy.interpolate import interp1d
 import plotly.graph_objects as go
 from conf import V_Ref, F_Ref, y_axis_titles_pstm, y_axis_titles_lstm, metric_to_empirial_pstm, metric_to_empirial_lstm, REGRESSION_LOG_MULTIPLIER
@@ -207,6 +208,7 @@ class LineTransferMobility:
             xaxis=dict(type="log")
         )
         return fig
+
 
 
 # --- Example usage ---

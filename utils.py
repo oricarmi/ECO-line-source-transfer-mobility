@@ -5,6 +5,7 @@ import json
 from io import StringIO
 from conf import THIRD_OCTAVE_BANDS, IMPACT_SEARCH_RANGE, y_axis_titles_lstm, metric_to_empirial_lstm
 import plotly.graph_objs as go
+import numpy as np
 
 def read_csv_with_metadata(filename):
     # read the raw csv from samurai and return a pandas dataframe
@@ -76,3 +77,88 @@ def plot_all_line_responses(all_ltm_objs: list, units="metric") -> go.Figure:
 
 def exponential_decay(distance, A, alpha, C):
     return A * np.exp(-alpha * distance) + C
+
+def plot_log_scale_measurements(force_df, vibration_dfs, impact_times, channel_distances, units="metric"):
+    """
+    Create a log-scale plot similar to preview but with only chosen impacts.
+    Force data is zeroed outside IMPACT_SEARCH_RANGE around chosen impact times.
+    """
+    from conf import IMPACT_SEARCH_RANGE, V_Ref, F_Ref, y_axis_titles_vib
+    import pandas as pd
+    
+    fig = go.Figure()
+    
+    # Process force data - zero values outside IMPACT_SEARCH_RANGE around chosen impacts
+    if "SUM(LIN)" in force_df.columns:
+        # Convert to numeric and drop any rows with NaN values
+        force_df["SUM(LIN)"] = pd.to_numeric(force_df["SUM(LIN)"], errors='coerce')
+        force_df["Time"] = pd.to_numeric(force_df["Time"], errors='coerce')
+        
+        # Drop rows where Time or SUM(LIN) couldn't be converted to numeric
+        force_df = force_df.dropna(subset=['Time', 'SUM(LIN)'])
+        
+        # Create a copy of force data and zero values outside impact ranges
+        force_data_processed = force_df["SUM(LIN)"].copy()
+        
+        # # Set all values to a small value (1e-10) initially
+        force_data_processed[:] = 1e-10
+        
+        # # For each chosen impact time, keep values within IMPACT_SEARCH_RANGE
+        for impact_time in impact_times:
+            mask = (force_df["Time"] >= float(impact_time) - IMPACT_SEARCH_RANGE/2) & \
+                   (force_df["Time"] <= float(impact_time) + IMPACT_SEARCH_RANGE/2)
+            force_data_processed[mask] = force_df["SUM(LIN)"][mask]
+        
+        # Convert to dB relative to F_Ref
+        force_db = 20 * np.log10(np.maximum(force_data_processed, 1e-10) / F_Ref)
+        
+        fig.add_trace(go.Scatter(
+            x=force_df["Time"], 
+            y=force_db.to_list(),
+            mode='lines', 
+            name="Force SUM(LIN) (dB)",
+            yaxis='y2',
+            line=dict(color='blue')
+        ))
+    
+    # Add vibration data (left y-axis) - only for chosen impacts
+    colormap = ["brown", "red", "orange", "pink", "yellow", "purple", "brown", "green", "cyan", "magenta"]
+    for i, (vib_df, distance) in enumerate(zip(vibration_dfs, channel_distances)):
+        if "SUM(LIN)" in vib_df.columns:
+            vib_df["SUM(LIN)"] = pd.to_numeric(vib_df["SUM(LIN)"], errors='coerce')
+            # Convert to dB relative to V_Ref
+            vib_db = 20 * np.log10(np.maximum(vib_df["SUM(LIN)"], 1e-10) / V_Ref)
+            fig.add_trace(go.Scatter(
+                x=vib_df["Time"], 
+                y=vib_db.to_list(),
+                mode='lines', 
+                name=f"Vib CH{i+1} ({distance}m) SUM(LIN) dB",
+                yaxis='y',
+                line=dict(color=colormap[i % len(colormap)])
+            ))
+    
+    # Add impact time lines
+    for i, impact_time in enumerate(impact_times):
+        fig.add_vline(x=float(impact_time), line_dash="dash", line_color="black", 
+                      annotation_text=f"Impact {i+1}", annotation_position="top")
+    
+    fig.update_layout(
+        title="Force and Vibration Measurements (Log Scale) - Selected Impacts Only",
+        xaxis_title="Time (s)",
+        yaxis=dict(
+            title=y_axis_titles_vib[units],
+            side="left",
+            title_font=dict(color="red"),
+            tickfont=dict(color="red")
+        ),
+        yaxis2=dict(
+            title="Force Level (dB rel 1N)",
+            side="right",
+            overlaying="y",
+            title_font=dict(color="blue"),
+            tickfont=dict(color="blue")
+        ),
+        height=600
+    )
+    
+    return fig

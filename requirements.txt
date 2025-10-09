@@ -7,3 +7,4 @@ plotly
 multipart
 python-multipart
 kaleido
+openpyxl
