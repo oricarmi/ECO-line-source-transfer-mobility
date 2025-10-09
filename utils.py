@@ -75,6 +75,53 @@ def plot_all_line_responses(all_ltm_objs: list, units="metric") -> go.Figure:
 def exponential_decay(distance, A, alpha, C):
     return A * np.exp(-alpha * distance) + C
 
+def calculate_a_weighting(frequency):
+    """
+    Calculate A-weighting correction for a given frequency.
+    Returns the A-weighting value in dB.
+    """
+    import math
+    
+    # A-weighting formula
+    f = frequency
+    f1 = 20.6  # Hz
+    f2 = 107.7  # Hz
+    f3 = 737.9  # Hz
+    f4 = 12194.2  # Hz
+    
+    # A-weighting calculation
+    a_weight = 1.2588966 * (148840000 * f**4) / (
+        (f**2 + f1**2) * 
+        math.sqrt((f**2 + f2**2) * (f**2 + f3**2)) * 
+        (f**2 + f4**2)
+    )
+    
+    # Convert to dB
+    a_weight_db = 20 * math.log10(a_weight)
+    
+    return a_weight_db
+
+def get_criteria_color(value, criteria_type, units):
+    """
+    Get color based on criteria thresholds.
+    Returns 'green', 'yellow', or 'red' based on value vs criteria.
+    """
+    from conf import gbv_criteria, gbn_criteria
+    
+    if criteria_type == "gbv":
+        criteria = gbv_criteria[units]
+    elif criteria_type == "gbn":
+        criteria = gbn_criteria[units]
+    else:
+        return "white"  # default color
+    
+    if value < criteria[0]:
+        return "lightgreen"
+    elif value <= criteria[1]:
+        return "lightyellow"
+    else:
+        return "lightcoral"
+
 def read_fds_csv(fds_csv_path) -> dict:
     """
     Read FDS CSV file with 1/3 octave spectrum columns.
@@ -164,16 +211,34 @@ def interpolate_lstm_for_receivers(receivers, ltm_list, units="metric") -> list[
     
     return interpolated_receivers
 
-def create_receiver_lstm_tables(interpolated_receivers, units="metric") -> dict:
+def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data=None, floor_resonance_frequencies="", db_amount="") -> dict:
     """
-    Create HTML tables for each receiver showing LSTM values.
+    Create HTML tables for each receiver showing LSTM values and additional calculations.
     Returns a dictionary with receiver names as keys and HTML table strings as values.
     """
     from conf import THIRD_OCTAVE_BANDS
     
+    # Parse floor resonance frequencies and dB amount
+    resonance_freqs = []
+    resonance_db = 0
+    if floor_resonance_frequencies and db_amount:
+        try:
+            resonance_freqs = [float(f.strip()) for f in floor_resonance_frequencies.split(',') if f.strip()]
+            resonance_db = float(db_amount.strip())
+        except ValueError:
+            resonance_freqs = []
+            resonance_db = 0
+    
     tables = {}
     
     for receiver in interpolated_receivers:
+        # Get special trackwork value from receiver data
+        special_trackwork = receiver['row_data'].get('Special Trackwork within 200 ft', 0)
+        try:
+            special_trackwork = float(special_trackwork)
+        except (ValueError, TypeError):
+            special_trackwork = 0
+        
         # Create HTML table with frequencies as columns
         table_html = f"""
         <div class="receiver-table">
@@ -181,7 +246,7 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric") -> dict:
             <table border="1" style="border-collapse: collapse; margin: 10px 0;">
                 <thead>
                     <tr>
-                        <th>LSTM ({y_axis_titles_lstm[units]})</th>
+                        <th></th>
         """
         
         # Add frequency columns to header
@@ -193,18 +258,121 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric") -> dict:
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>Value</td>
         """
         
-        # Add LSTM values as row data
+        # Initialize summary values
+        summary_values = {}
+        
+        # LSTM row
+        table_html += """
+                    <tr>
+                        <td>LSTM</td>
+        """
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 lstm_value = receiver['lstm_values'][freq_value]
                 table_html += f"<td>{lstm_value:.2f}</td>"
+                summary_values[freq_value] = lstm_value
+        table_html += "</tr>"
+        
+        # FDS row
+        table_html += """
+                    <tr>
+                        <td>FDS</td>
+        """
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
+                table_html += f"<td>{fds_value:.2f}</td>"
+                summary_values[freq_value] += fds_value
+        table_html += "</tr>"
+        
+        # CBuild dB row (all zeros)
+        table_html += """
+                    <tr>
+                        <td>CBuild dB</td>
+        """
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                table_html += "<td>0.00</td>"
+        table_html += "</tr>"
+        
+        # Resonance row
+        table_html += """
+                    <tr>
+                        <td>Resonance (dB)</td>
+        """
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                if freq_value in resonance_freqs:
+                    table_html += f"<td>{resonance_db:.2f}</td>"
+                    summary_values[freq_value] += resonance_db
+                else:
+                    table_html += "<td>0.00</td>"
+        table_html += "</tr>"
+        
+        # Special Trackwork row
+        table_html += """
+                    <tr>
+                        <td>Special Trackwork</td>
+        """
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                table_html += f"<td>{special_trackwork:.2f}</td>"
+                summary_values[freq_value] += special_trackwork
+        table_html += "</tr>"
+        
+        # Summary row
+        table_html += """
+                    <tr style="font-weight: bold; background-color: #f0f0f0;">
+                        <td>Summary - Total GBV [VdB]</td>
+        """
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                total_value = summary_values.get(freq_value, 0)
+                color = get_criteria_color(total_value, "gbv", units)
+                table_html += f'<td style="background-color: {color};">{total_value:.2f}</td>'
+        table_html += "</tr>"
+        
+        # A-weight row
+        table_html += """
+                    <tr>
+                        <td>A-weight [dB]</td>
+        """
+        a_weight_values = {}
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                # A-weighting calculation (just the correction value)
+                a_weight = calculate_a_weighting(freq_value)
+                a_weight_values[freq_value] = a_weight
+                table_html += f"<td>{a_weight:.2f}</td>"
+        table_html += "</tr>"
+        
+        # Krad dB row (all -5)
+        table_html += """
+                    <tr>
+                        <td>Krad dB</td>
+        """
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                table_html += "<td>-5.00</td>"
+        table_html += "</tr>"
+        
+        # Summary - Total GBN row
+        table_html += """
+                    <tr style="font-weight: bold; background-color: #f0f0f0;">
+                        <td>Summary - Total GBN [dB(A)]</td>
+        """
+        for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
+            if freq_value in receiver['lstm_values']:
+                gbv_value = summary_values.get(freq_value, 0)
+                a_weight = a_weight_values.get(freq_value, 0)
+                gbn_total = gbv_value + a_weight - 5  # GBV + A-weight + Krad (-5)
+                color = get_criteria_color(gbn_total, "gbn", units)
+                table_html += f'<td style="background-color: {color};">{gbn_total:.2f}</td>'
+        table_html += "</tr>"
         
         table_html += """
-                    </tr>
                 </tbody>
             </table>
         </div>

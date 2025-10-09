@@ -232,7 +232,7 @@ async def analyze_data(
             interpolated_receivers = interpolate_lstm_for_receivers(receivers, ltm_list, units)
             
             # Create HTML tables for each receiver
-            receiver_tables = create_receiver_lstm_tables(interpolated_receivers, units)
+            receiver_tables = create_receiver_lstm_tables(interpolated_receivers, units, fds_data, floor_resonance_frequencies, db_amount)
             print(f"Created {len(receiver_tables)} receiver tables")
             
         except Exception as e:
