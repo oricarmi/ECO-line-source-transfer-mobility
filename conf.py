@@ -14,3 +14,4 @@ y_axis_titles_lstm = {
 
 metric_to_empirial_pstm = 18.85 # dB (add this to the metric to get to imperial)
 metric_to_empirial_lstm = 34.8 # dB (add this to the metric to get to imperial)
+empirial_sqrt_inch_to_sqrt_feet = 10.8 #dB (add this to the imperial in sqrt(in) to get to imperial in sqrt(ft))

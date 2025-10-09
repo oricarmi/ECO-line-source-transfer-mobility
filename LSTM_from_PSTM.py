@@ -90,12 +90,12 @@ class LineTransferMobility:
         xs = np.linspace(-self.train_length/2, self.train_length/2, num_segments)
         slant = np.sqrt(self.receiver_offset**2 + xs**2 + self.source_depth**2)        
         point_db = predict_level_db_fn(slant)
-        yp_linear = 10 ** (point_db / REGRESSION_LOG_MULTIPLIER)
+        yp_linear = 10 ** (point_db / REGRESSION_LOG_MULTIPLIER) # (m / s)
         # amplitude sum (according to FTA e.q B4 Appendix B)
-        y_line = np.trapezoid(yp_linear, xs) # integral - (m / s) * m
-        y_line /= F * np.sqrt(self.train_length) # (m / s) * sqrt(m) / N = (m / s) / (N / sqrt(m))
+        power_integral = np.trapezoid(yp_linear**2, xs) # (m^2 / s^2) * m
+        y_line = np.sqrt(power_integral) / F # (m / s) / N) * sqrt(m) = (m / s) / (N / sqrt(m))
         y_ref = V_Ref / F_Ref
-        lstm_db = 10 * np.log10(y_line / y_ref)
+        lstm_db = 20 * np.log10(y_line / y_ref)
         return lstm_db
 
     def compute_freq_lstm(self, band_center):
@@ -136,7 +136,7 @@ class LineTransferMobility:
         fig = go.Figure()
         for fc, reg in self.point_regressions.items():
             ds = np.linspace(1.0, max(self.distances)+10)
-            vals = 10 * np.log10(10**(reg["predict"](ds) / REGRESSION_LOG_MULTIPLIER) / self.force_measurements[fc] / V_Ref)
+            vals = 20 * np.log10(10**(reg["predict"](ds) / REGRESSION_LOG_MULTIPLIER) / self.force_measurements[fc] / V_Ref)
             if units == "imperial":
                 vals += metric_to_empirial_pstm
             fig.add_trace(go.Scatter(x=ds, y=list(vals), mode='lines', name=f"{fc:.1f} Hz"))
@@ -162,7 +162,7 @@ class LineTransferMobility:
         fig = go.Figure()
         sqrt_N = np.sqrt(len(self.distances))
         for band_center in self.band_centers:
-            levels = np.array([10 * np.log10(self.measurements[d][band_center] / V_Ref / self.force_measurements[band_center]) for d in self.distances])
+            levels = np.array([20 * np.log10(self.measurements[d][band_center] / V_Ref / self.force_measurements[band_center]) for d in self.distances])
             errors = np.array([8.686 * self.measurements_iqr[d][band_center] / sqrt_N / V_Ref / self.force_measurements[band_center] for d in self.distances])
             errors /= levels
             if units == "imperial":
@@ -170,7 +170,7 @@ class LineTransferMobility:
             fig.add_trace(go.Scatter(x=self.distances, y=list(levels), error_y=dict(type='data', array=list(errors), visible=True), mode='markers+lines', name=f"{band_center:.1f} Hz"))
         fig.update_layout(
             title="Point Source Transfer Mobility - Velocity Measurements vs Log Distance",
-            xaxis_title="Distance (m)",
+            xaxis_title="Log Distance (m)",
             yaxis_title=y_axis_titles_pstm[units],
             xaxis=dict(type="log")
         )
@@ -180,7 +180,7 @@ class LineTransferMobility:
         fig = go.Figure()
         sqrt_N = np.sqrt(len(self.band_centers))
         for d in self.distances:
-            levels = np.array([10 * np.log10(self.measurements[d][band_center] / V_Ref / self.force_measurements[band_center]) for band_center in self.band_centers])
+            levels = np.array([20 * np.log10(self.measurements[d][band_center] / V_Ref / self.force_measurements[band_center]) for band_center in self.band_centers])
             errors = np.array([8.686 * self.measurements_iqr[d][band_center] / sqrt_N / V_Ref / self.force_measurements[band_center] for band_center in self.band_centers])
             errors /= levels
             if units == "imperial":

@@ -195,8 +195,8 @@ async def analyze_data(
     fig_pstm_distance = ltm_list[0].plot_pstm_level_vs_distance(units=units)
     fig_pstm_frequency = ltm_list[0].plot_pstm_level_vs_frequency(units=units)
     fig_lstms = plot_all_line_responses(ltm_list, units=units)
+    project_name = os.path.basename(force_csv_path)[:os.path.basename(force_csv_path).find('1_3')-1]
     if save_path:
-        project_name = os.path.basename(force_csv_path)[:os.path.basename(force_csv_path).find('Velocity')]
         fig_pr.write_image(os.path.join(save_path, f"{project_name}_point_regressions.png"))
         fig_fm.write_image(os.path.join(save_path, f"{project_name}_force_measurements.png"))
         fig_pstm_distance.write_image(os.path.join(save_path, f"{project_name}_pstm_vs_dist.png"))
@@ -227,8 +227,10 @@ async def analyze_data(
     if os.path.exists(temp_dir):
         os.rmdir(temp_dir)
 
-    subtitle = f"train_length = {train_length}m, source_depth = {source_depth}m"
-    return templates.TemplateResponse("results.html", {"request": request, "plots": plots, "subtitle": subtitle})
+    title = f"Vibration Impact Analysis Results for {project_name}"
+    subtitle = f"train_length = {train_length}m, source_depth = {source_depth}m."
+    subtitle2 = f"Impact times: {impact_times_list}"
+    return templates.TemplateResponse("results.html", {"request": request, "plots": plots, "title": title, "subtitle": subtitle, "subtitle2": subtitle2})
 
 @app.post("/preview", response_class=HTMLResponse)
 async def preview_data(

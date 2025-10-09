@@ -6,8 +6,9 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Vibration Impact Analysis Results</h1>
+    <h1>{{title}}</h1>
     <h2>{{subtitle}}</h2>
+    <h2>{{subtitle2}}</h2>
     {% if error %}
         <p style="color: red;">{{ error }}</p>
     {% elif plots %}
