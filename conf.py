@@ -24,6 +24,6 @@ gbv_criteria = {
     "imperial": [72, 78]
 }
 gbn_criteria = {
-    "metric": [66, 72],
-    "imperial": [72, 78]
+    "metric": [35, 40],
+    "imperial": [41, 46]
 }
