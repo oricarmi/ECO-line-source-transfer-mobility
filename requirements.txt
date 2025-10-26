@@ -8,3 +8,4 @@ multipart
 python-multipart
 kaleido
 openpyxl
+scipy
