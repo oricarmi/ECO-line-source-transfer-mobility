@@ -49,6 +49,17 @@ async def analyze_data(
     impact_times_list: str = Form(None),
     receiver_distances_list: str = Form(None),
     impacts_to_remove: str = Form(""),
+    # Per-channel impact removal parameters
+    impacts_to_remove_ch0: str = Form(""),
+    impacts_to_remove_ch1: str = Form(""),
+    impacts_to_remove_ch2: str = Form(""),
+    impacts_to_remove_ch3: str = Form(""),
+    impacts_to_remove_ch4: str = Form(""),
+    impacts_to_remove_ch5: str = Form(""),
+    impacts_to_remove_ch6: str = Form(""),
+    impacts_to_remove_ch7: str = Form(""),
+    impacts_to_remove_ch8: str = Form(""),
+    impacts_to_remove_ch9: str = Form(""),
     fds_csv_path: str = Form(None)
 ):
     # Initialize temp_dir for cleanup
@@ -69,11 +80,53 @@ async def analyze_data(
         # Set Excel path from preview flow
         receivers_data_excel_path = receivers_data_excel_path if receivers_data_excel_path else None
         
-        # Process impacts to remove
-        if impacts_to_remove.strip():
+        # Process per-channel impacts to remove
+        per_channel_impact_times = []
+        per_channel_impacts_to_keep = []
+        
+        # Collect per-channel impact selections
+        channel_impact_params = [
+            impacts_to_remove_ch0, impacts_to_remove_ch1, impacts_to_remove_ch2, 
+            impacts_to_remove_ch3, impacts_to_remove_ch4, impacts_to_remove_ch5,
+            impacts_to_remove_ch6, impacts_to_remove_ch7, impacts_to_remove_ch8, 
+            impacts_to_remove_ch9
+        ]
+        
+        # Process each channel's impact removal
+        for ch_idx, impacts_param in enumerate(channel_impact_params):
+            if ch_idx >= len(vibration_csv_paths):
+                break
+                
+            if impacts_param.strip():
+                try:
+                    impacts_to_remove_list = [int(x.strip()) - 1 for x in impacts_param.split(',') if x.strip()]
+                    # Keep impacts that are NOT in the removal list
+                    kept_impacts = [i for i in range(len(impact_times_list)) if i not in impacts_to_remove_list]
+                    per_channel_impacts_to_keep.append(set(kept_impacts))
+                    # Create per-channel impact times list
+                    channel_impact_times = [impact_times_list[i] for i in kept_impacts]
+                    per_channel_impact_times.append(channel_impact_times)
+                except ValueError:
+                    return templates.TemplateResponse("results.html", {"request": request, "error": f"Invalid impact numbers for channel {ch_idx + 1}. Please use comma-separated integers."})
+            else:
+                # If no impacts specified for this channel, keep all impacts
+                per_channel_impacts_to_keep.append(set(range(len(impact_times_list))))
+                per_channel_impact_times.append(impact_times_list.copy())
+        
+        # Calculate intersection of all channels' kept impacts for plotting
+        if per_channel_impacts_to_keep:
+            intersection_impacts = per_channel_impacts_to_keep[0]
+            for channel_impacts in per_channel_impacts_to_keep[1:]:
+                intersection_impacts = intersection_impacts.intersection(channel_impacts)
+            
+            # Convert back to sorted list for plotting
+            intersection_list = sorted(list(intersection_impacts))
+            impact_times_list = [impact_times_list[i] for i in intersection_list]
+        
+        # Fallback to old method if no per-channel data provided
+        elif impacts_to_remove.strip():
             try:
-                impacts_to_remove_list = [int(x.strip()) - 1 for x in impacts_to_remove.split(',') if x.strip()]  # Convert to 0-based indexing
-                # Remove the specified impacts
+                impacts_to_remove_list = [int(x.strip()) - 1 for x in impacts_to_remove.split(',') if x.strip()]
                 impact_times_list = [time for i, time in enumerate(impact_times_list) if i not in impacts_to_remove_list]
             except ValueError:
                 return templates.TemplateResponse("results.html", {"request": request, "error": "Invalid impact numbers. Please use comma-separated integers."})
@@ -104,6 +157,9 @@ async def analyze_data(
         channel_distances_list = [float(d.strip()) for d in channel_distances.split(',')]
         impact_times_list = [float(t.strip()) for t in impact_times.split(',')]
         receiver_distances_list = [float(d.strip()) for d in receiver_distances.split(',') if d.strip()]
+        
+        # For direct upload, use same impacts for all channels
+        per_channel_impact_times = [impact_times_list.copy() for _ in range(len(vibration_csv_paths))]
 
     if len(channel_distances_list) != len(vibration_csv_paths):
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
@@ -119,6 +175,7 @@ async def analyze_data(
     # Process reference CSV (force measurements)
     force_df = read_csv_with_metadata(force_csv_path)
     force_df.name = "force_df"
+    # Use intersection impacts for force measurements (for consistency in analysis)
     force_measurements = preprocess_data(force_df, impact_times_list)
     force_measurements = {k: np.median(np.array(v)) for k, v in force_measurements.items()}
     pstm_measurements = {}
@@ -130,7 +187,9 @@ async def analyze_data(
         ind = int(vib_channel_csv_path[vib_channel_csv_path.find('CH')+2]) - offset
         vib_df = read_csv_with_metadata(vib_channel_csv_path)
         vib_df.name = vib_channel_csv_path[-7:-3]
-        vibration_measurements = preprocess_data(vib_df, impact_times_list)
+        # Use per-channel impact times if available, otherwise use global impact times
+        channel_impact_times = per_channel_impact_times[ind] if per_channel_impact_times and ind < len(per_channel_impact_times) else impact_times_list
+        vibration_measurements = preprocess_data(vib_df, channel_impact_times)
 
         # Perform subtraction (Vibration Level - Force Level)
         current_distance_measurements_median = {}
@@ -329,6 +388,10 @@ async def preview_data(
 
     if len(channel_distances_list) != len(vibration_csv_paths):
         return templates.TemplateResponse("results.html", {"request": request, "error": "Mismatch between number of channel distances and uploaded CSVs."})
+    
+    # Calculate channel offset for proper channel numbering
+    channel_nums = [int(p[p.find('CH')+2]) for p in vibration_csv_paths]
+    offset = min(channel_nums)
 
     # Process reference CSV (force measurements)
     force_df = read_csv_with_metadata(force_csv_path)
@@ -358,6 +421,8 @@ async def preview_data(
         "request": request, 
         "plots": plots, 
         "impact_times": impact_times_list,
+        "channel_count": len(vibration_csv_paths),
+        "channel_offset": offset,
         "session_data": session_data
     })
 
