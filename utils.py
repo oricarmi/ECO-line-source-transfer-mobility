@@ -211,6 +211,16 @@ def interpolate_lstm_for_receivers(receivers, ltm_list, units="metric") -> list[
     
     return interpolated_receivers
 
+def sum_db_levels(db_values):
+    """
+    Properly sum dB levels using logarithmic addition.
+    L_total = 10 * log10(sum(10^(L_i/10)))
+    """
+    if not db_values:
+        return 0
+    linear_sum = sum(10**(db_val/10) for db_val in db_values)
+    return 10 * np.log10(linear_sum) if linear_sum > 0 else 0
+
 def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data=None, floor_resonance_frequencies="", db_amount="") -> dict:
     """
     Create HTML tables for each receiver showing LSTM values and additional calculations.
@@ -272,18 +282,20 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                     <tr>
                         <td>LSTM</td>
         """
-        lstm_sum_all = 0
-        lstm_sum_fds_nonzero = 0
+        lstm_values_all = []
+        lstm_values_fds_nonzero = []
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 lstm_value = receiver['lstm_values'][freq_value]
                 table_html += f"<td>{lstm_value:.2f}</td>"
                 summary_values[freq_value] = lstm_value
-                lstm_sum_all += lstm_value
+                lstm_values_all.append(lstm_value)
                 # Check if FDS is non-zero for this frequency
                 fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
                 if fds_value != 0:
-                    lstm_sum_fds_nonzero += lstm_value
+                    lstm_values_fds_nonzero.append(lstm_value)
+        lstm_sum_all = sum_db_levels(lstm_values_all)
+        lstm_sum_fds_nonzero = sum_db_levels(lstm_values_fds_nonzero)
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{lstm_sum_all:.2f}</strong></td>"
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{lstm_sum_fds_nonzero:.2f}</strong></td>"
         table_html += "</tr>"
@@ -293,16 +305,18 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                     <tr>
                         <td>FDS</td>
         """
-        fds_sum_all = 0
-        fds_sum_fds_nonzero = 0
+        fds_values_all = []
+        fds_values_fds_nonzero = []
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
                 table_html += f"<td>{fds_value:.2f}</td>"
                 summary_values[freq_value] += fds_value
-                fds_sum_all += fds_value
+                fds_values_all.append(fds_value)
                 if fds_value != 0:
-                    fds_sum_fds_nonzero += fds_value
+                    fds_values_fds_nonzero.append(fds_value)
+        fds_sum_all = sum_db_levels(fds_values_all)
+        fds_sum_fds_nonzero = sum_db_levels(fds_values_fds_nonzero)
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{fds_sum_all:.2f}</strong></td>"
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{fds_sum_fds_nonzero:.2f}</strong></td>"
         table_html += "</tr>"
@@ -327,20 +341,23 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                     <tr>
                         <td>Resonance (dB)</td>
         """
-        resonance_sum_all = 0
-        resonance_sum_fds_nonzero = 0
+        resonance_values_all = []
+        resonance_values_fds_nonzero = []
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 if freq_value in resonance_freqs:
                     table_html += f"<td>{resonance_db:.2f}</td>"
                     summary_values[freq_value] += resonance_db
-                    resonance_sum_all += resonance_db
+                    resonance_values_all.append(resonance_db)
                     # Check if FDS is non-zero for this frequency
                     fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
                     if fds_value != 0:
-                        resonance_sum_fds_nonzero += resonance_db
+                        resonance_values_fds_nonzero.append(resonance_db)
                 else:
                     table_html += "<td>0.00</td>"
+                    resonance_values_all.append(0)
+        resonance_sum_all = sum_db_levels(resonance_values_all)
+        resonance_sum_fds_nonzero = sum_db_levels(resonance_values_fds_nonzero)
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{resonance_sum_all:.2f}</strong></td>"
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{resonance_sum_fds_nonzero:.2f}</strong></td>"
         table_html += "</tr>"
@@ -350,17 +367,19 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                     <tr>
                         <td>Special Trackwork</td>
         """
-        trackwork_sum_all = 0
-        trackwork_sum_fds_nonzero = 0
+        trackwork_values_all = []
+        trackwork_values_fds_nonzero = []
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 table_html += f"<td>{special_trackwork:.2f}</td>"
                 summary_values[freq_value] += special_trackwork
-                trackwork_sum_all += special_trackwork
+                trackwork_values_all.append(special_trackwork)
                 # Check if FDS is non-zero for this frequency
                 fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
                 if fds_value != 0:
-                    trackwork_sum_fds_nonzero += special_trackwork
+                    trackwork_values_fds_nonzero.append(special_trackwork)
+        trackwork_sum_all = sum_db_levels(trackwork_values_all)
+        trackwork_sum_fds_nonzero = sum_db_levels(trackwork_values_fds_nonzero)
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{trackwork_sum_all:.2f}</strong></td>"
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{trackwork_sum_fds_nonzero:.2f}</strong></td>"
         table_html += "</tr>"
@@ -370,18 +389,20 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                     <tr style="font-weight: bold; background-color: #f0f0f0;">
                         <td>Summary - Total GBV [VdB]</td>
         """
-        gbv_sum_all = 0
-        gbv_sum_fds_nonzero = 0
+        gbv_values_all = []
+        gbv_values_fds_nonzero = []
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 total_value = summary_values.get(freq_value, 0)
                 color = get_criteria_color(total_value, "gbv", units)
                 table_html += f'<td style="background-color: {color};">{total_value:.2f}</td>'
-                gbv_sum_all += total_value
+                gbv_values_all.append(total_value)
                 # Check if FDS is non-zero for this frequency
                 fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
                 if fds_value != 0:
-                    gbv_sum_fds_nonzero += total_value
+                    gbv_values_fds_nonzero.append(total_value)
+        gbv_sum_all = sum_db_levels(gbv_values_all)
+        gbv_sum_fds_nonzero = sum_db_levels(gbv_values_fds_nonzero)
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{gbv_sum_all:.2f}</strong></td>"
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{gbv_sum_fds_nonzero:.2f}</strong></td>"
         table_html += "</tr>"
@@ -392,21 +413,23 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                         <td>A-weight [dB]</td>
         """
         a_weight_values = {}
-        a_weight_sum_all = 0
-        a_weight_sum_fds_nonzero = 0
+        a_weight_list_all = []
+        a_weight_list_fds_nonzero = []
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 # A-weighting calculation (just the correction value)
                 a_weight = calculate_a_weighting(freq_value)
                 a_weight_values[freq_value] = a_weight
                 table_html += f"<td>{a_weight:.2f}</td>"
-                a_weight_sum_all += a_weight
+                a_weight_list_all.append(a_weight)
                 # Check if FDS is non-zero for this frequency
                 fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
                 if fds_value != 0:
-                    a_weight_sum_fds_nonzero += a_weight
-        table_html += f"<td style='background-color: #e0e0e0;'><strong>{a_weight_sum_all:.2f}</strong></td>"
-        table_html += f"<td style='background-color: #e0e0e0;'><strong>{a_weight_sum_fds_nonzero:.2f}</strong></td>"
+                    a_weight_list_fds_nonzero.append(a_weight)
+        # Note: A-weight is just a correction factor, summing them doesn't have physical meaning
+        # But for consistency with other rows, we'll show N/A
+        table_html += f"<td style='background-color: #e0e0e0;'><strong>N/A</strong></td>"
+        table_html += f"<td style='background-color: #e0e0e0;'><strong>N/A</strong></td>"
         table_html += "</tr>"
         
         # Krad dB row (all -5)
@@ -414,18 +437,12 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                     <tr>
                         <td>Krad dB</td>
         """
-        krad_sum_all = 0
-        krad_sum_fds_nonzero = 0
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 table_html += "<td>-5.00</td>"
-                krad_sum_all += -5.00
-                # Check if FDS is non-zero for this frequency
-                fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
-                if fds_value != 0:
-                    krad_sum_fds_nonzero += -5.00
-        table_html += f"<td style='background-color: #e0e0e0;'><strong>{krad_sum_all:.2f}</strong></td>"
-        table_html += f"<td style='background-color: #e0e0e0;'><strong>{krad_sum_fds_nonzero:.2f}</strong></td>"
+        # Note: Krad is just a correction factor, summing them doesn't have physical meaning
+        table_html += f"<td style='background-color: #e0e0e0;'><strong>N/A</strong></td>"
+        table_html += f"<td style='background-color: #e0e0e0;'><strong>N/A</strong></td>"
         table_html += "</tr>"
         
         # Summary - Total GBN row
@@ -433,8 +450,8 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                     <tr style="font-weight: bold; background-color: #f0f0f0;">
                         <td>Summary - Total GBN [dB(A)]</td>
         """
-        gbn_sum_all = 0
-        gbn_sum_fds_nonzero = 0
+        gbn_values_all = []
+        gbn_values_fds_nonzero = []
         for freq_band_str, freq_value in THIRD_OCTAVE_BANDS.items():
             if freq_value in receiver['lstm_values']:
                 gbv_value = summary_values.get(freq_value, 0)
@@ -442,11 +459,13 @@ def create_receiver_lstm_tables(interpolated_receivers, units="metric", fds_data
                 gbn_total = gbv_value + a_weight - 5  # GBV + A-weight + Krad (-5)
                 color = get_criteria_color(gbn_total, "gbn", units)
                 table_html += f'<td style="background-color: {color};">{gbn_total:.2f}</td>'
-                gbn_sum_all += gbn_total
+                gbn_values_all.append(gbn_total)
                 # Check if FDS is non-zero for this frequency
                 fds_value = fds_data.get(freq_band_str, 0) if fds_data else 0
                 if fds_value != 0:
-                    gbn_sum_fds_nonzero += gbn_total
+                    gbn_values_fds_nonzero.append(gbn_total)
+        gbn_sum_all = sum_db_levels(gbn_values_all)
+        gbn_sum_fds_nonzero = sum_db_levels(gbn_values_fds_nonzero)
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{gbn_sum_all:.2f}</strong></td>"
         table_html += f"<td style='background-color: #e0e0e0;'><strong>{gbn_sum_fds_nonzero:.2f}</strong></td>"
         table_html += "</tr>"
