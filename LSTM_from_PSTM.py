@@ -94,7 +94,7 @@ class LineTransferMobility:
         yp_linear = 10 ** (point_db / REGRESSION_LOG_MULTIPLIER) # (m / s)
         # amplitude sum (according to FTA e.q B4 Appendix B)
         power_integral = np.trapezoid(yp_linear**2, xs) # (m^2 / s^2) * m
-        y_line = np.sqrt(power_integral) / F # (m / s) / N) * sqrt(m) = (m / s) / (N / sqrt(m))
+        y_line = np.sqrt(power_integral) * np.sqrt(self.train_length) / F # (m / s) / N) * sqrt(m) = (m / s) / (N / sqrt(m))
         y_ref = V_Ref / F_Ref
         lstm_db = 20 * np.log10(y_line / y_ref)
         return lstm_db
